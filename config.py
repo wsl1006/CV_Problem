@@ -17,10 +17,10 @@ class Config:
     # 这是两条灯带实际安装位置，用于建立3D模型
     LIGHT_SPACING = 0.165  # 16.5cm
 
-    # PnP 尺度标定：手测相机至目标中心为 1.450m 时，当前输出为 1.280m。
-    # 新系数 = 旧系数 1.065 × (1.450 / 1.280) = 1.206。
+    # PnP 尺度标定：手测相机至目标中心为 1.300m 时，当前输出约 1.500m。
+    # 新系数 = 旧系数 1.206 × (1.300 / 1.500) = 1.045。
     # 后续重标定时：新系数 = 当前系数 × (真实距离 / 当前 Range)。
-    PNP_MODEL_SCALE = 1.206
+    PNP_MODEL_SCALE = 1.045
 
     # ==================== 通道差分检测参数 ====================
     # 红灯通道差分 - 实际标定值
@@ -31,22 +31,29 @@ class Config:
     RED_USE_CHANNEL_DIFF = False
     # 斜视时灯条变窄且白色核心的 Hue 不稳定：用附近的红色响应证明其属于红灯，
     # 但只把高亮核心并入轮廓，避免重新引入整片光晕。
-    RED_RECOVER_BRIGHT_CORE = True
+    RED_RECOVER_BRIGHT_CORE = False
     RED_CORE_MIN_VALUE = 245
     RED_SUPPORT_DILATE_SIZE = 9
     # 参考 rm_vision：先用灰度高亮区域提取灯芯，再由轮廓邻域颜色确认红灯。
     # 过曝灯芯趋近白色时，HSV 的色相和饱和度不再可靠。
-    RED_USE_GRAYSCALE_CORE_MASK = True
+    # 当前现场 HSV 标定已经能干净分离两条灯芯，直接使用 HSV 主掩膜；
+    # 不再把整幅高亮灰度区域并入，避免窗户和反光形成大轮廓。
+    RED_USE_GRAYSCALE_CORE_MASK = False
     GRAYSCALE_CORE_THRESHOLD = 200
     # 近距离自动曝光会压低白色灯芯的灰度；此掩膜保留仍然呈明显红色的灯带部分。
     RED_USE_CHROMA_MASK = True
-    RED_CHROMA_MIN_VALUE = 100
+    RED_CHROMA_MIN_VALUE = 70
     COLOR_CLASSIFICATION_DILATE_SIZE = 13
     # 单灯芯常有较大白色过曝区域，颜色确认保持适度门槛；窗光主要由后续双灯条配对排除。
     MIN_RED_COLOR_RESPONSE = 8.0
     # 防止暖白窗光仅凭轻微 R-B 偏差被误判为红灯：要求邻域内存在明显红色像素。
     RED_COLOR_DOMINANCE_MARGIN = 45
     MIN_RED_COLOR_FRACTION = 0.03
+    # 标定的灯芯是低饱和、高亮的暖红色，无法满足 R-G > 45。
+    # HSV 命中足够多且 R-B 色差处于该灯芯范围时，也确认其为红灯。
+    MIN_RED_HSV_FRACTION = 0.20
+    MIN_RED_HSV_RESPONSE = 0.0
+    MAX_RED_HSV_RESPONSE = 45.0
 
     # 蓝灯通道差分
     BLUE_CHANNEL_DIFF_WEIGHT_B = 1.0
@@ -55,9 +62,9 @@ class Config:
 
     # HSV 辅助识别与亮度门限（按现场灯带标定）。
     # V 通道直接描述像素亮度，避免环境中较暗的红色物体进入候选。
-    HSV_MIN_VALUE = 222
-    HSV_LOWER_RED1 = np.array([12, 12, HSV_MIN_VALUE])
-    HSV_UPPER_RED1 = np.array([35, 78, 255])
+    HSV_MIN_VALUE = 234
+    HSV_LOWER_RED1 = np.array([0, 0, HSV_MIN_VALUE])
+    HSV_UPPER_RED1 = np.array([16, 10, 255])
     # 当前灯带的色相不跨越 OpenCV Hue 的 0/179 边界，第二段复用标定范围，
     # 以免旧的 170--179 范围引入背景候选。
     HSV_LOWER_RED2 = HSV_LOWER_RED1.copy()
@@ -72,6 +79,9 @@ class Config:
     DISPLAY_RED_ONLY = True
     DISPLAY_TARGET_DILATE_SIZE = 25
     DISPLAY_RED_MARGIN = 12
+    # 配对尚未成功时仅显示通过几何筛选的红色候选，避免大片背景候选染红整幅图。
+    # 该选项仅影响显示，PnP 仍必须使用一对通过全部约束的灯条。
+    DISPLAY_UNPAIRED_RED_CANDIDATES = False
     # 纯红色处理图默认不绘制候选框、角点、坐标轴和文字；识别结果仍输出到终端。
     DISPLAY_ANNOTATIONS = False
     SHOW_MEASUREMENT_WINDOW = True
@@ -87,17 +97,19 @@ class Config:
     MAX_LIGHT_BAR_AREA_RATIO = 0.20  # 最大面积占整帧比例，分辨率变化时自动放宽
 
     # 亮红色灯带应为细长且接近矩形的高亮轮廓；这两项排除窗户反光等不规则亮斑。
-    MIN_LIGHT_BAR_ASPECT_RATIO = 2.5
+    # 近距离、快速移动或斜视时，膨胀光晕会使单根灯条的表观长宽比降低。
+    # 误检由后面的双灯条同色、平行、重叠和间距约束排除。
+    MIN_LIGHT_BAR_ASPECT_RATIO = 1.1
     MAX_LIGHT_BAR_ASPECT_RATIO = 50.0   # 最大长宽比
 
     MIN_LIGHT_BAR_RECTANGULARITY = 0.50
 
     # 方向约束（度）
     EXPECTED_LIGHT_BAR_ANGLE = 90.0     # 期望方向（竖直）
-    LIGHT_BAR_ANGLE_TOLERANCE = 30.0    # 单灯条相对竖直方向的容差；当前画面足够
+    LIGHT_BAR_ANGLE_TOLERANCE = 50.0    # 单灯条相对竖直方向的容差，兼容移动与大偏航
 
     # 亮度要求 - 降低要求，包含更多区域
-    MIN_LIGHT_BAR_BRIGHTNESS = 120      # 从150降到120
+    MIN_LIGHT_BAR_BRIGHTNESS = 70       # 自动曝光降低时仍保留明显红色灯带
 
     # ==================== 灯条配对参数 ====================
     # 长度相似度

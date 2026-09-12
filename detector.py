@@ -208,6 +208,9 @@ class LightDetector:
             _, mask_red = cv2.threshold(
                 gray, Config.GRAYSCALE_CORE_THRESHOLD, 255, cv2.THRESH_BINARY
             )
+            # 用户标定的灯芯低饱和但 Hue 稳定；直接并入 HSV 结果，避免它在
+            # 灰度略低于阈值时从候选掩膜中消失。
+            mask_red = cv2.bitwise_or(mask_red, mask_red_hsv)
             if Config.RED_USE_CHROMA_MASK:
                 chroma_margin = Config.RED_COLOR_DOMINANCE_MARGIN
                 red_chroma = (
@@ -318,9 +321,31 @@ class LightDetector:
         blue_fraction = float(np.mean(
             (b_values > g_values + margin) & (b_values > r_values + margin)
         ))
-        if (response >= Config.MIN_RED_COLOR_RESPONSE and
-                red_fraction >= Config.MIN_RED_COLOR_FRACTION):
-            return 'red', response, red_fraction
+
+        # 低饱和的过曝灯芯不满足 R-G > 45，但已落在用户现场标定的 HSV
+        # 范围内。用轮廓邻域的 HSV 命中比例作为第二条红色确认通路。
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        hsv_red = cv2.bitwise_or(
+            cv2.inRange(hsv, Config.HSV_LOWER_RED1, Config.HSV_UPPER_RED1),
+            cv2.inRange(hsv, Config.HSV_LOWER_RED2, Config.HSV_UPPER_RED2)
+        )
+        hsv_hits = hsv_red[pixels] > 0
+        hsv_fraction = float(np.mean(hsv_hits))
+        # 色差只在 HSV 命中像素上计算，不能让膨胀邻域中的黑背景稀释结果。
+        if np.any(hsv_hits):
+            hsv_response = float(np.mean((r_values - b_values)[hsv_hits]))
+        else:
+            hsv_response = 0.0
+        strong_red = (
+            response >= Config.MIN_RED_COLOR_RESPONSE and
+            red_fraction >= Config.MIN_RED_COLOR_FRACTION
+        )
+        calibrated_hsv_red = (
+            hsv_fraction >= Config.MIN_RED_HSV_FRACTION and
+            Config.MIN_RED_HSV_RESPONSE <= hsv_response <= Config.MAX_RED_HSV_RESPONSE
+        )
+        if strong_red or calibrated_hsv_red:
+            return 'red', response, max(red_fraction, hsv_fraction)
         if (response <= -Config.MIN_RED_COLOR_RESPONSE and
                 blue_fraction >= Config.MIN_RED_COLOR_FRACTION):
             return 'blue', response, blue_fraction

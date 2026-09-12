@@ -108,9 +108,12 @@ class LightTrackingSystem:
         left_bar, right_bar, valid_candidates, debug_info = self.detector.detect(frame)
 
         # 显示使用红色目标图，检测和 PnP 仍使用上面的原始 frame，避免显示掩膜影响测量。
-        display_bars = ([left_bar, right_bar]
-                        if left_bar is not None and right_bar is not None
-                        else valid_candidates)
+        if left_bar is not None and right_bar is not None:
+            display_bars = [left_bar, right_bar]
+        elif Config.DISPLAY_UNPAIRED_RED_CANDIDATES:
+            display_bars = debug_info['all_candidates']
+        else:
+            display_bars = valid_candidates
         if Config.DISPLAY_RED_ONLY:
             result_frame = self._render_red_only_frame(
                 frame, display_bars, debug_info['mask_red']
