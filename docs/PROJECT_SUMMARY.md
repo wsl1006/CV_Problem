@@ -38,18 +38,19 @@
 
 ```
 CV_Problem/
-├── main.py                  # 主程序入口
-├── camera.py                # 相机模块
-├── detector.py              # 灯带检测模块
-├── geometry.py              # 几何计算模块
-├── pose.py                  # 姿态估计模块
-├── config.py                # 配置文件
+├── core/                    # 核心算法包
+│   ├── camera.py            # 相机模块
+│   ├── detector.py          # 灯带检测模块
+│   ├── geometry.py          # 几何计算模块
+│   ├── pose.py              # 姿态估计模块
+│   └── config.py            # 配置文件
+├── main_rgb.py              # 主程序入口
 ├── calibrate_camera.py      # 相机标定辅助工具
 ├── test_modules.py          # 模块测试脚本
 ├── requirements.txt         # Python依赖
 ├── README.md                # 项目说明文档
 ├── USAGE.txt                # 使用指南
-├── PROJECT_SUMMARY.md       # 本文件（项目总结）
+├── docs/PROJECT_SUMMARY.md  # 本文件（项目总结）
 ├── data/                    # 数据目录
 └── results/                 # 结果保存目录
 ```
@@ -58,7 +59,7 @@ CV_Problem/
 
 ## 🔧 技术实现细节
 
-### 1. 灯带识别 (detector.py)
+### 1. 灯带识别 (core/detector.py)
 
 **实现方法：**
 - BGR → HSV 颜色空间转换
@@ -80,7 +81,7 @@ mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
 contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 ```
 
-### 2. 矩形拟合与角点提取 (geometry.py)
+### 2. 矩形拟合与角点提取 (core/geometry.py)
 
 **实现方法：**
 - 最小外接旋转矩形：`cv2.minAreaRect()`
@@ -97,7 +98,7 @@ box = cv2.boxPoints(rect)
 sorted_corners = self.sort_corners(box)
 ```
 
-### 3. 三维模型建立 (geometry.py)
+### 3. 三维模型建立 (core/geometry.py)
 
 **实现方法：**
 - 根据灯带物理尺寸（长度L、宽度W）定义3D坐标
@@ -113,7 +114,7 @@ object_points = np.array([
 ], dtype=np.float32)
 ```
 
-### 4. 位姿解算 (pose.py)
+### 4. 位姿解算 (core/pose.py)
 
 **实现方法：**
 - 使用PnP算法：`cv2.solvePnP()`
@@ -139,7 +140,7 @@ pitch = np.arctan2(-rmat[2, 0], sy)
 yaw = np.arctan2(rmat[1, 0], rmat[0, 0])
 ```
 
-### 5. 位移计算 (pose.py)
+### 5. 位移计算 (core/pose.py)
 
 **实现方法：**
 - 保存初始位置tvec_initial
@@ -159,7 +160,7 @@ distance = np.sqrt(dx**2 + dy**2 + dz**2)
 
 ### 运行主程序
 ```bash
-python main.py
+python main_rgb.py
 ```
 
 ### 程序界面显示内容
@@ -199,17 +200,17 @@ python calibrate_camera.py
 - 使用棋盘格标定板
 - 至少拍摄10张不同角度的图像
 - 获得相机内参和畸变系数
-- 将结果复制到config.py
+- 将结果复制到 core/config.py
 
 ### 3. 配置参数
-编辑 `config.py`：
+编辑 `core/config.py`：
 - 填入相机内参矩阵和畸变系数
 - 设置灯带物理尺寸（米）
 - 根据灯带颜色调整HSV阈值
 
 ### 4. 运行程序
 ```bash
-python main.py
+python main_rgb.py
 ```
 
 ---

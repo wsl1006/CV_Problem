@@ -7,8 +7,8 @@
 """
 import cv2
 import numpy as np
-from geometry import GeometryProcessor
-from config import Config
+from .geometry import GeometryProcessor
+from .config import Config
 
 
 class PoseResult:

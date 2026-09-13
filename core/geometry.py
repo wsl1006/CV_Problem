@@ -4,7 +4,7 @@
 """
 import cv2
 import numpy as np
-from config import Config
+from .config import Config
 
 
 class GeometryProcessor:
@@ -22,7 +22,7 @@ class GeometryProcessor:
         坐标系定义：
         - 原点在两灯带中心
         - X轴向右（两灯带连线方向）
-        - Y轴向上（灯带长度方向）
+        - Y轴向下（灯带长度方向，与 OpenCV 相机坐标系一致）
         - Z=0平面
 
         返回：8个3D点，对应两条灯带的8个角点
@@ -44,10 +44,10 @@ class GeometryProcessor:
         #   L_BL ---- L_BR
 
         left_bar_3d = np.array([
-            [-S/2 - W/2,  L/2, 0],   # L_TL: 左灯带左上
-            [-S/2 + W/2,  L/2, 0],   # L_TR: 左灯带右上
-            [-S/2 + W/2, -L/2, 0],   # L_BR: 左灯带右下
-            [-S/2 - W/2, -L/2, 0]    # L_BL: 左灯带左下
+            [-S/2 - W/2, -L/2, 0],   # L_TL: 左灯带左上
+            [-S/2 + W/2, -L/2, 0],   # L_TR: 左灯带右上
+            [-S/2 + W/2,  L/2, 0],   # L_BR: 左灯带右下
+            [-S/2 - W/2,  L/2, 0]    # L_BL: 左灯带左下
         ], dtype=np.float32)
 
         # 右灯带4个3D点
@@ -57,10 +57,10 @@ class GeometryProcessor:
         #   R_BL ---- R_BR
 
         right_bar_3d = np.array([
-            [S/2 - W/2,  L/2, 0],    # R_TL: 右灯带左上
-            [S/2 + W/2,  L/2, 0],    # R_TR: 右灯带右上
-            [S/2 + W/2, -L/2, 0],    # R_BR: 右灯带右下
-            [S/2 - W/2, -L/2, 0]     # R_BL: 右灯带左下
+            [S/2 - W/2, -L/2, 0],    # R_TL: 右灯带左上
+            [S/2 + W/2, -L/2, 0],    # R_TR: 右灯带右上
+            [S/2 + W/2,  L/2, 0],    # R_BR: 右灯带右下
+            [S/2 - W/2,  L/2, 0]     # R_BL: 右灯带左下
         ], dtype=np.float32)
 
         # 合并：8个点
@@ -87,17 +87,18 @@ class GeometryProcessor:
     def build_light_bar_center_endpoints_3d_model(self):
         """构造两根灯条中心线端点的 4 点平面模型。
 
-        顺序与图像点严格一致：左上、左下、右下、右上。相比灯条的 8 个
-        矩形角点，这个模型不依赖难以稳定测量的 10 mm 灯条宽度。
+        顺序与图像点严格一致：左上、左下、右下、右上。Y 轴向下为正，
+        与 OpenCV 相机坐标保持一致，使正对相机时 Roll 接近 0°。
+        相比灯条的 8 个矩形角点，这个模型不依赖难以稳定测量的 10 mm 灯条宽度。
         """
         scale = Config.PNP_MODEL_SCALE
         L = Config.LIGHT_LENGTH * scale
         S = Config.LIGHT_SPACING * scale
         return np.array([
-            [-S / 2,  L / 2, 0],
             [-S / 2, -L / 2, 0],
-            [ S / 2, -L / 2, 0],
+            [-S / 2,  L / 2, 0],
             [ S / 2,  L / 2, 0],
+            [ S / 2, -L / 2, 0],
         ], dtype=np.float32)
 
     def extract_bar_corners(self, bar):

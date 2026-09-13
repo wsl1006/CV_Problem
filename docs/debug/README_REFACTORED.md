@@ -107,7 +107,7 @@ python main_rgb.py
 
 ## 🔧 参数调整指南
 
-所有参数在 `config.py` 中集中管理。
+所有参数在 `core/config.py` 中集中管理。
 
 ### 1. 通道差分检测
 
@@ -318,7 +318,7 @@ MAX_DISTANCE = 10.0  # 最大距离（米）
 
 ### 3. 修改DEBUG参数
 
-在 `config.py` 中：
+在 `core/config.py` 中：
 
 ```python
 DEBUG = True                      # 终端详细输出

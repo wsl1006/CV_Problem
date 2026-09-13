@@ -83,7 +83,7 @@ RealSense 的优势：
 第3步：配置参数
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-编辑 config.py 文件：
+编辑 core/config.py 文件：
 
 1. ⚠️ 相机内参（RealSense会自动提供，但你也可以手动设置）
 
@@ -130,7 +130,7 @@ RealSense 的优势：
 
 1. ✅ python test_realsense.py              # 测试相机
 2. ✅ python hsv_tuner_realsense.py         # 调整HSV（最重要！）
-3. ✅ 编辑 config.py                        # 填入HSV值和灯带尺寸
+3. ✅ 编辑 core/config.py                   # 填入HSV值和灯带尺寸
 4. ✅ python main_realsense.py              # 运行完整程序
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -187,7 +187,7 @@ A:
    - 运行 hsv_tuner_realsense.py 重新调整HSV阈值
    - 检查光照条件
    - 确保灯带足够亮
-   - 调整 config.py 中的 MIN_CONTOUR_AREA
+   - 调整 core/config.py 中的 MIN_CONTOUR_AREA
 
 Q3: 位姿抖动？
 A:
@@ -207,16 +207,16 @@ A:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 RealSense专用文件：
-  ✅ camera_realsense.py          # RealSense相机类
+  ✅ core/camera_realsense.py     # RealSense相机类
   ✅ test_realsense.py            # RealSense测试程序
   ✅ hsv_tuner_realsense.py       # HSV调试工具（RealSense）
   ✅ main_realsense.py            # 主程序（RealSense）
 
 通用文件：
-  ✅ detector.py                  # 灯带检测器
-  ✅ geometry.py                  # 几何计算
-  ✅ pose.py                      # 姿态估计
-  ✅ config.py                    # 配置文件
+  ✅ core/detector.py             # 灯带检测器
+  ✅ core/geometry.py             # 几何计算
+  ✅ core/pose.py                 # 姿态估计
+  ✅ core/config.py               # 配置文件
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

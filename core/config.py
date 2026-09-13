@@ -53,7 +53,7 @@ class Config:
     # HSV 命中足够多且 R-B 色差处于该灯芯范围时，也确认其为红灯。
     MIN_RED_HSV_FRACTION = 0.20
     MIN_RED_HSV_RESPONSE = 0.0
-    MAX_RED_HSV_RESPONSE = 45.0
+    MAX_RED_HSV_RESPONSE = 70.0
 
     # 蓝灯通道差分
     BLUE_CHANNEL_DIFF_WEIGHT_B = 1.0
@@ -62,9 +62,11 @@ class Config:
 
     # HSV 辅助识别与亮度门限（按现场灯带标定）。
     # V 通道直接描述像素亮度，避免环境中较暗的红色物体进入候选。
-    HSV_MIN_VALUE = 234
-    HSV_LOWER_RED1 = np.array([0, 0, HSV_MIN_VALUE])
-    HSV_UPPER_RED1 = np.array([16, 10, 255])
+    # 现场重新标定：H=[3,42]，S=[0,73]，V=[212,255]。
+    # cv2.threshold 使用严格大于，211 对应保留 V >= 212。
+    HSV_MIN_VALUE = 211
+    HSV_LOWER_RED1 = np.array([3, 0, 212])
+    HSV_UPPER_RED1 = np.array([42, 73, 255])
     # 当前灯带的色相不跨越 OpenCV Hue 的 0/179 边界，第二段复用标定范围，
     # 以免旧的 170--179 范围引入背景候选。
     HSV_LOWER_RED2 = HSV_LOWER_RED1.copy()
@@ -75,15 +77,14 @@ class Config:
     # 本项目当前目标为亮红色灯条，不将蓝色候选送入配对。
     TARGET_LIGHT_COLOR = 'red'
 
-    # 显示时只保留已确认目标灯条附近的红色发光区域；检测与 PnP 始终使用原始帧。
-    DISPLAY_RED_ONLY = True
+    # 主窗口显示原始相机图像，并在其上叠加灯条、角点、位置和位移结果。
+    DISPLAY_RED_ONLY = False
     DISPLAY_TARGET_DILATE_SIZE = 25
     DISPLAY_RED_MARGIN = 12
     # 配对尚未成功时仅显示通过几何筛选的红色候选，避免大片背景候选染红整幅图。
     # 该选项仅影响显示，PnP 仍必须使用一对通过全部约束的灯条。
     DISPLAY_UNPAIRED_RED_CANDIDATES = False
-    # 纯红色处理图默认不绘制候选框、角点、坐标轴和文字；识别结果仍输出到终端。
-    DISPLAY_ANNOTATIONS = False
+    DISPLAY_ANNOTATIONS = True
     SHOW_MEASUREMENT_WINDOW = True
 
     # 斜视后灯条短边可能仅剩 3--5px，5x5 开运算会将其完全腐蚀。
@@ -168,8 +169,9 @@ class Config:
     RESULTS_PATH = "results/"
 
     # ==================== 调试模式 ====================
-    DEBUG = True                    # 详细调试信息
+    # 实时显示使用窗口叠加结果；关闭逐帧终端输出，避免影响帧率。
+    DEBUG = False                   # 详细调试信息
     DEBUG_SHOW_ALL_CANDIDATES = False  # 默认仅显示最终配对；按 d 可临时查看候选
     DEBUG_SHOW_FILTERED = False        # 显示被过滤的候选
-    DEBUG_SHOW_PAIRS = True            # 显示所有配对尝试
+    DEBUG_SHOW_PAIRS = False           # 显示所有配对尝试
     DEBUG_SHOW_MASKS = False           # 显示中间mask

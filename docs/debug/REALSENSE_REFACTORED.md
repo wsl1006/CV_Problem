@@ -4,12 +4,12 @@
 
 所有核心文件已完成重构：
 
-- ✅ `config.py` - 新的评分机制和参数
-- ✅ `detector.py` - 候选检测+评分系统  
-- ✅ `geometry.py` - 统一角点排序TL→TR→BR→BL
-- ✅ `pose.py` - PnP重投影误差验证
-- ✅ `camera_realsense.py` - D435i真实内参读取
-- ✅ `main_rgb.py` - 完整主程序
+- ✅ `core/config.py` - 新的评分机制和参数
+- ✅ `core/detector.py` - 候选检测+评分系统  
+- ✅ `core/geometry.py` - 统一角点排序TL→TR→BR→BL
+- ✅ `core/pose.py` - PnP重投影误差验证
+- ✅ `core/camera_realsense.py` - D435i真实内参读取
+- ✅ `core/main_rgb.py` - 完整主程序
 
 ---
 
@@ -89,9 +89,9 @@ V Max: 255
 
 按 **'q'** 退出后，记录输出的HSV值！
 
-### 第4步：更新config.py
+### 第4步：更新 core/config.py
 
-将HSV值填入 `config.py`：
+将HSV值填入 `core/config.py`：
 
 ```python
 HSV_LOWER_RED1 = np.array([H_min, S_min, V_min])
@@ -103,7 +103,7 @@ HSV_UPPER_RED1 = np.array([H_max, S_max, V_max])
 用尺子测量灯带：
 
 ```python
-# 在 config.py 中
+# 在 core/config.py 中
 LIGHT_LENGTH = 0.26  # 你的实际长度（米）
 LIGHT_WIDTH = 0.011   # 你的实际宽度（米）
 ```
@@ -275,7 +275,7 @@ python hsv_tuner_realsense.py
 **原因**：HSV范围太宽或候选评分阈值太低
 
 **解决**：
-1. 提高 `config.py` 中的 `MIN_CANDIDATE_SCORE`
+1. 提高 `core/config.py` 中的 `MIN_CANDIDATE_SCORE`
 2. 缩小HSV范围
 3. 提高 `S_min`（排除低饱和度）
 
@@ -308,7 +308,7 @@ python hsv_tuner_realsense.py
 
 ## 🔧 参数调优指南
 
-### config.py 关键参数
+### core/config.py 关键参数
 
 ```python
 # 1. HSV范围（最重要！）
@@ -342,7 +342,7 @@ MAX_DISTANCE = 5.0            # 最大距离
 
 ## 📊 DEBUG模式
 
-在 `config.py` 中启用：
+在 `core/config.py` 中启用：
 
 ```python
 DEBUG = True                # 打印详细信息

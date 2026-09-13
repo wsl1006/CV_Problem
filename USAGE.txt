@@ -70,7 +70,7 @@
 
 ### 步骤1：配置参数（重要！）
 
-在运行程序前，需要修改 `config.py` 中的参数：
+在运行程序前，需要修改 `core/config.py` 中的参数：
 
 ```python
 # 1. 相机内参（需要通过相机标定获得）
@@ -95,7 +95,7 @@ HSV_UPPER_RED1 = np.array([10, 255, 255])
 ### 步骤2：运行程序
 
 ```bash
-python main.py
+python main_rgb.py
 ```
 
 ### 步骤3：操作
@@ -110,7 +110,7 @@ python main.py
 
 1. **调整HSV阈值**：
    - 使用HSV颜色空间调试工具
-   - 根据实际灯带颜色修改 config.py 中的HSV范围
+   - 根据实际灯带颜色修改 core/config.py 中的HSV范围
 
 2. **调整轮廓筛选参数**：
    - MIN_CONTOUR_AREA：最小面积
@@ -139,12 +139,12 @@ python main.py
 
 ## ==================== 文件说明 ====================
 
-- `camera.py` - 相机模块
-- `config.py` - 配置文件（需要修改）
-- `detector.py` - 灯带检测模块
-- `geometry.py` - 几何计算模块
-- `pose.py` - 姿态估计模块
-- `main.py` - 主程序
+- `core/camera.py` - 相机模块
+- `core/config.py` - 配置文件（需要修改）
+- `core/detector.py` - 灯带检测模块
+- `core/geometry.py` - 几何计算模块
+- `core/pose.py` - 姿态估计模块
+- `main_rgb.py` - 主程序入口
 - `test_modules.py` - 模块测试脚本
 - `README.md` - 详细说明文档
 - `USAGE.txt` - 本文件（使用指南）

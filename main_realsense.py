@@ -6,11 +6,11 @@ import numpy as np
 import os
 from datetime import datetime
 
-from camera_realsense import RealSenseCamera
-from detector import LightDetector
-from geometry import GeometryProcessor
-from pose import PoseEstimator
-from config import Config
+from core.camera_realsense import RealSenseCamera
+from core.detector import LightDetector
+from core.geometry import GeometryProcessor
+from core.pose import PoseEstimator
+from core.config import Config
 
 
 class LightTrackingSystemRealSense:

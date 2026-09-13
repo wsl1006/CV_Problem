@@ -49,7 +49,7 @@ realsense-viewer
 
 cd /home/batman/CV_Problem
 
-python3 main.py
+python3 main_rgb.py
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -197,7 +197,7 @@ python3 main.py
     1. 运行 HSV 调试工具重新标定：
        python3 hsv_tuner_realsense.py
 
-    2. 检查 config.py 中的 HSV 参数是否正确
+    2. 检查 core/config.py 中的 HSV 参数是否正确
 
     3. 检查光照条件（避免强光、阴影）
 
@@ -242,7 +242,7 @@ python3 main.py
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-编辑 config.py:
+编辑 core/config.py:
 
     DEBUG = True   # 打印详细信息
     DEBUG = False  # 关闭调试输出
@@ -282,7 +282,7 @@ DEBUG = True 时，终端会打印：
 🎉 现在开始测试！
 
 运行：
-    python3 main.py
+    python3 main_rgb.py
 
 祝你成功！
 

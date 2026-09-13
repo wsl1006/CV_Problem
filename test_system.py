@@ -24,8 +24,8 @@ except ImportError as e:
 # 2. 检查文件
 print("\n2️⃣  检查文件完整性...")
 import os
-files = ['config.py', 'detector.py', 'geometry.py', 'pose.py',
-         'camera_realsense.py', 'main_rgb.py']
+files = ['core/config.py', 'core/detector.py', 'core/geometry.py', 'core/pose.py',
+         'core/camera_realsense.py', 'core/main_rgb.py', 'main_rgb.py']
 for f in files:
     if os.path.exists(f):
         print(f"  ✅ {f}")
@@ -36,11 +36,11 @@ for f in files:
 # 3. 测试导入
 print("\n3️⃣  测试模块导入...")
 try:
-    from config import Config
-    from detector import LightDetector, LightBarCandidate
-    from geometry import GeometryProcessor
-    from pose import PoseEstimator, PoseResult
-    from camera_realsense import RealSenseCamera
+    from core.config import Config
+    from core.detector import LightDetector, LightBarCandidate
+    from core.geometry import GeometryProcessor
+    from core.pose import PoseEstimator, PoseResult
+    from core.camera_realsense import RealSenseCamera
     print("✅ 所有模块导入成功")
 except Exception as e:
     print(f"❌ 模块导入失败: {e}")

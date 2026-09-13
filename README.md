@@ -39,12 +39,15 @@
 
 ```
 CV_Problem/
-├── camera.py          # 相机模块：处理相机初始化和图像获取
-├── config.py          # 配置文件：相机参数、灯带尺寸、检测参数
-├── detector.py        # 检测器模块：灯带识别和轮廓提取
-├── geometry.py        # 几何计算模块：矩形拟合、角点提取、3D建模
-├── pose.py            # 姿态估计模块：PnP求解、欧拉角转换
-├── main.py            # 主程序：整合所有模块，运行系统
+├── core/              # 核心算法包
+│   ├── camera.py      # 相机模块：处理相机初始化和图像获取
+│   ├── config.py      # 配置文件：相机参数、灯带尺寸、检测参数
+│   ├── detector.py    # 检测器模块：灯带识别和轮廓提取
+│   ├── geometry.py    # 几何计算模块：矩形拟合、角点提取、3D建模
+│   ├── pose.py        # 姿态估计模块：PnP求解、欧拉角转换
+│   └── main_rgb.py    # RGB 主流程
+├── main_rgb.py        # 兼容启动入口
+├── docs/debug/        # HSV 标定、RealSense 与调试文档
 ├── data/              # 数据目录（可放置测试图像/视频）
 ├── results/           # 结果保存目录
 └── README.md          # 项目说明文档
@@ -67,7 +70,7 @@ pip install opencv-python numpy matplotlib
 
 ### 1. 配置参数
 
-在运行前，需要在 `config.py` 中配置以下参数：
+在运行前，需要在 `core/config.py` 中配置以下参数：
 
 - **相机内参矩阵**（`CAMERA_MATRIX`）：根据相机标定结果填写
 - **畸变系数**（`DIST_COEFFS`）：根据相机标定结果填写
@@ -80,7 +83,7 @@ pip install opencv-python numpy matplotlib
 ### 2. 运行程序
 
 ```bash
-python main.py
+python main_rgb.py
 ```
 
 ### 3. 操作说明
