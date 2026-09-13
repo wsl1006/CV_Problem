@@ -1,8 +1,8 @@
 """
 相机模块 - 处理相机初始化和图像获取
 """
-import cv2
-import numpy as np
+import cv2 # pyright: ignore[reportMissingImports]
+import numpy as np # pyright: ignore[reportMissingImports]
 from config import Config
 
 
