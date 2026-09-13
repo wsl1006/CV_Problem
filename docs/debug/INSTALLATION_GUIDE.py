@@ -195,7 +195,7 @@ python3 main_rgb.py
 
 排查：
     1. 运行 HSV 调试工具重新标定：
-       python3 hsv_tuner_realsense.py
+       python3 -m test.hsv_tuner_realsense
 
     2. 检查 core/config.py 中的 HSV 参数是否正确
 

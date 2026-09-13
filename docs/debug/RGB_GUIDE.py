@@ -27,7 +27,7 @@ print("""
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 命令：
-    python test_realsense.py
+    python -m test.test_realsense
 
 目的：
     - 确认相机正常工作
@@ -43,7 +43,7 @@ print("""
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 命令：
-    python hsv_tuner_realsense.py
+    python -m test.hsv_tuner_realsense
 
 这是最重要的一步！必须找到正确的HSV值才能检测到灯带。
 
@@ -127,7 +127,7 @@ print("""
 
 如果你想快速看效果，可以先用默认参数：
 
-1. python hsv_tuner_realsense.py    # 调整HSV（必须做！）
+1. python -m test.hsv_tuner_realsense # 调整HSV（必须做！）
 2. 编辑 core/config.py              # 填入HSV值和灯带尺寸
 3. python main_rgb.py               # 运行！
 
@@ -181,7 +181,7 @@ print("""
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 第一步：运行HSV调试工具
-    python hsv_tuner_realsense.py
+    python -m test.hsv_tuner_realsense
 
 把灯带放在相机前，调整滑动条！
 

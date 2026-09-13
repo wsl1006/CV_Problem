@@ -145,7 +145,7 @@ python main_rgb.py
 - `core/geometry.py` - 几何计算模块
 - `core/pose.py` - 姿态估计模块
 - `main_rgb.py` - 主程序入口
-- `test_modules.py` - 模块测试脚本
+- `test/test_modules.py` - 模块测试脚本
 - `README.md` - 详细说明文档
 - `USAGE.txt` - 本文件（使用指南）
 

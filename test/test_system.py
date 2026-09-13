@@ -23,11 +23,12 @@ except ImportError as e:
 
 # 2. 检查文件
 print("\n2️⃣  检查文件完整性...")
-import os
+from pathlib import Path
+project_root = Path(__file__).resolve().parents[1]
 files = ['core/config.py', 'core/detector.py', 'core/geometry.py', 'core/pose.py',
          'core/camera_realsense.py', 'core/main_rgb.py', 'main_rgb.py']
 for f in files:
-    if os.path.exists(f):
+    if (project_root / f).exists():
         print(f"  ✅ {f}")
     else:
         print(f"  ❌ {f} 缺失")
@@ -58,7 +59,7 @@ print("✅ 配置参数正常")
 # 5. 测试几何模块
 print("\n5️⃣  测试几何模块...")
 geom = GeometryProcessor()
-obj_points = geom.build_target_3d_model()
+obj_points = geom.build_two_light_bars_3d_model()
 print(f"  3D模型点数: {len(obj_points)}")
 print(f"  P1(TL): {obj_points[0]}")
 print(f"  P4(BL): {obj_points[3]}")
@@ -74,5 +75,5 @@ print("    按 'q' - 退出")
 print("    按 's' - 保存帧")
 print("    按 'r' - 重置位置")
 print("    按 'd' - 切换调试显示")
-print("\n  详细说明: cat README_REFACTORED.md")
+print("\n  详细说明: cat docs/debug/README_REFACTORED.md")
 print("="*70)

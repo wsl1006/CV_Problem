@@ -12,7 +12,7 @@ print("""
 ╚════════════════════════════════════════════════════════════╝
 
 运行命令：
-    python test_camera.py
+    python -m test.test_camera
 
 预期结果：
     ✅ 能看到相机画面
@@ -37,7 +37,7 @@ print("""
 ╚════════════════════════════════════════════════════════════╝
 
 运行命令：
-    python hsv_tuner.py
+    python -m test.hsv_tuner
 
 这个工具会：
     ✅ 显示实时相机画面
@@ -73,7 +73,7 @@ print("""
        - 例如：2.5cm = 0.025m
 
 运行命令：
-    python calibrate_camera.py
+    python -m test.calibrate_camera
 
 操作步骤：
     1. 程序会打开相机
@@ -134,7 +134,7 @@ print("""
 ╚════════════════════════════════════════════════════════════╝
 
 运行命令：
-    python main.py
+    python main_rgb.py
 
 程序会显示：
     ✅ 实时相机画面
@@ -164,14 +164,14 @@ print("""
 如果暂时没有标定板，可以先用默认参数测试检测功能：
 
 1. 先测试HSV颜色检测：
-   python hsv_tuner.py
+   python -m test.hsv_tuner
 
    调整参数直到能检测到灯带
 
 2. 更新config.py中的HSV阈值
 
 3. 运行主程序（位姿不准确，但能看到检测效果）：
-   python main.py
+   python main_rgb.py
 
 注意：
    ⚠️  没有正确的相机标定，位姿估计（X,Y,Z）会不准确
@@ -221,11 +221,11 @@ print("""
 
 推荐测试顺序：
 
-1. ✅ python test_camera.py          # 测试相机
-2. ✅ python hsv_tuner.py            # 调整HSV阈值
-3. ✅ python calibrate_camera.py    # 相机标定（需要棋盘格）
+1. ✅ python -m test.test_camera     # 测试相机
+2. ✅ python -m test.hsv_tuner       # 调整HSV阈值
+3. ✅ python -m test.calibrate_camera # 相机标定（需要棋盘格）
 4. ✅ 编辑 config.py                # 填入参数
-5. ✅ python main.py                # 运行完整程序
+5. ✅ python main_rgb.py            # 运行完整程序
 
 祝你测试顺利！🎉
 """)

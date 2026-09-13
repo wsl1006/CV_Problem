@@ -45,8 +45,7 @@ CV_Problem/
 │   ├── pose.py              # 姿态估计模块
 │   └── config.py            # 配置文件
 ├── main_rgb.py              # 主程序入口
-├── calibrate_camera.py      # 相机标定辅助工具
-├── test_modules.py          # 模块测试脚本
+├── test/                    # 标定、HSV 调参和系统测试脚本
 ├── requirements.txt         # Python依赖
 ├── README.md                # 项目说明文档
 ├── USAGE.txt                # 使用指南
@@ -195,7 +194,7 @@ pip install -r requirements.txt
 
 ### 2. 相机标定（重要！）
 ```bash
-python calibrate_camera.py
+python -m test.calibrate_camera
 ```
 - 使用棋盘格标定板
 - 至少拍摄10张不同角度的图像
@@ -219,7 +218,7 @@ python main_rgb.py
 
 ### 模块测试
 ```bash
-python test_modules.py
+python -m test.test_modules
 ```
 结果：✅ 所有模块测试通过
 

@@ -64,7 +64,7 @@ realsense-viewer
 这是最重要的步骤！
 
 ```bash
-python hsv_tuner_realsense.py
+python -m test.hsv_tuner_realsense
 ```
 
 **标定目标**：
@@ -264,7 +264,7 @@ lsusb | grep Intel
 
 **解决**：
 ```bash
-python hsv_tuner_realsense.py
+python -m test.hsv_tuner_realsense
 # 重新标定HSV
 ```
 

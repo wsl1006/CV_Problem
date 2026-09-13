@@ -48,6 +48,7 @@ CV_Problem/
 │   └── main_rgb.py    # RGB 主流程
 ├── main_rgb.py        # 兼容启动入口
 ├── docs/debug/        # HSV 标定、RealSense 与调试文档
+├── test/              # 标定、HSV 调参、硬件测试和验证脚本
 ├── data/              # 数据目录（可放置测试图像/视频）
 ├── results/           # 结果保存目录
 └── README.md          # 项目说明文档

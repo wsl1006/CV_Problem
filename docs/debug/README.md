@@ -5,3 +5,4 @@
 - `README_REFACTORED.md`：重构版本的运行和调试说明。
 - `REALSENSE_GUIDE.py`：RealSense 相机连接与运行步骤。
 - `RGB_GUIDE.py`：仅 RGB 模式的运行步骤。
+- `INSTALLATION_GUIDE.py`：依赖安装、RealSense 连接和启动说明。

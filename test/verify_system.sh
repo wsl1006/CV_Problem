@@ -3,6 +3,9 @@
 # D435i RGB 灯带检测系统 - 快速验证脚本
 #
 
+PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$PROJECT_ROOT" || exit 1
+
 echo "=========================================="
 echo "  D435i RGB 灯带检测系统 - 验证"
 echo "=========================================="
@@ -30,7 +33,7 @@ echo ""
 
 # 3. 检查文件完整性
 echo "3️⃣  检查文件完整性..."
-FILES=("config.py" "camera_realsense.py" "detector.py" "geometry.py" "pose.py" "main_rgb.py")
+FILES=("core/config.py" "core/camera_realsense.py" "core/detector.py" "core/geometry.py" "core/pose.py" "main_rgb.py")
 for file in "${FILES[@]}"; do
     if [ -f "$file" ]; then
         echo "  ✅ $file"
@@ -49,14 +52,14 @@ echo ""
 echo "📋 下一步操作："
 echo ""
 echo "第1步：标定HSV参数（必须！）"
-echo "  python hsv_tuner_realsense.py"
+echo "  python -m test.hsv_tuner_realsense"
 echo ""
-echo "第2步：更新config.py中的HSV值"
+echo "第2步：更新 core/config.py 中的HSV值"
 echo ""
 echo "第3步：运行主程序"
 echo "  python main_rgb.py"
 echo ""
 echo "详细说明请查看："
-echo "  cat REALSENSE_REFACTORED.md"
+echo "  cat docs/debug/REALSENSE_REFACTORED.md"
 echo ""
 echo "=========================================="

@@ -27,7 +27,7 @@ RealSense 的优势：
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 命令：
-    python test_realsense.py
+    python -m test.test_realsense
 
 预期效果：
     ✅ 看到彩色图像窗口
@@ -52,7 +52,7 @@ RealSense 的优势：
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 命令：
-    python hsv_tuner_realsense.py
+    python -m test.hsv_tuner_realsense
 
 这是最重要的一步！
 
@@ -94,7 +94,7 @@ RealSense 的优势：
    LIGHT_LENGTH = 0.20  # 例如：20厘米 = 0.20米
    LIGHT_WIDTH = 0.03   # 例如：3厘米 = 0.03米
 
-3. ✅ HSV颜色阈值（从 hsv_tuner_realsense.py 获得）
+3. ✅ HSV颜色阈值（从 test/hsv_tuner_realsense.py 获得）
 
    HSV_LOWER_RED1 = np.array([H_min, S_min, V_min])
    HSV_UPPER_RED1 = np.array([H_max, S_max, V_max])
@@ -105,7 +105,7 @@ RealSense 的优势：
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 命令：
-    python main_realsense.py
+    python -m test.main_realsense
 
 程序会实时显示：
     ✅ 检测到的灯带（绿色框）
@@ -128,10 +128,10 @@ RealSense 的优势：
 🎯 快速测试流程（推荐）
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-1. ✅ python test_realsense.py              # 测试相机
-2. ✅ python hsv_tuner_realsense.py         # 调整HSV（最重要！）
+1. ✅ python -m test.test_realsense          # 测试相机
+2. ✅ python -m test.hsv_tuner_realsense     # 调整HSV（最重要！）
 3. ✅ 编辑 core/config.py                   # 填入HSV值和灯带尺寸
-4. ✅ python main_realsense.py              # 运行完整程序
+4. ✅ python main_rgb.py                     # 运行完整程序
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -184,7 +184,7 @@ A:
 
 Q2: 检测不到灯带？
 A:
-   - 运行 hsv_tuner_realsense.py 重新调整HSV阈值
+   - 运行 test/hsv_tuner_realsense.py 重新调整HSV阈值
    - 检查光照条件
    - 确保灯带足够亮
    - 调整 core/config.py 中的 MIN_CONTOUR_AREA
@@ -208,9 +208,9 @@ A:
 
 RealSense专用文件：
   ✅ core/camera_realsense.py     # RealSense相机类
-  ✅ test_realsense.py            # RealSense测试程序
-  ✅ hsv_tuner_realsense.py       # HSV调试工具（RealSense）
-  ✅ main_realsense.py            # 主程序（RealSense）
+  ✅ test/test_realsense.py       # RealSense测试程序
+  ✅ test/hsv_tuner_realsense.py  # HSV调试工具（RealSense）
+  ✅ test/main_realsense.py       # 旧版 RealSense 测试入口
 
 通用文件：
   ✅ core/detector.py             # 灯带检测器
@@ -224,15 +224,15 @@ RealSense专用文件：
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 第一步：先测试RealSense相机
-    python test_realsense.py
+    python -m test.test_realsense
 
 看到相机画面后，按 'q' 退出，然后：
 
 第二步：调整HSV阈值
-    python hsv_tuner_realsense.py
+    python -m test.hsv_tuner_realsense
 
 调好参数后，就可以运行主程序了：
-    python main_realsense.py
+    python main_rgb.py
 
 祝你测试顺利！🎉
 
