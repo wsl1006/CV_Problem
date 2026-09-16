@@ -43,6 +43,10 @@ class PoseEstimator:
         self.camera_matrix = camera_matrix
         self.dist_coeffs = dist_coeffs
         self.geometry = GeometryProcessor()
+        self._previous_solution_rvec = None
+        self._previous_solution_tvec = None
+        self._filtered_rvec = None
+        self._filtered_tvec = None
 
         if Config.DEBUG:
             print("\n[PoseEstimator] 初始化")
@@ -78,24 +82,27 @@ class PoseEstimator:
         ], dtype=np.float32)
         object_points = self.geometry.build_light_bar_center_endpoints_3d_model()
 
+        left_length = float(np.linalg.norm(left_bar.bottom - left_bar.top))
+        right_length = float(np.linalg.norm(right_bar.bottom - right_bar.top))
+        endpoint_length_diff = abs(left_length - right_length) / (
+            0.5 * (left_length + right_length) + 1e-6
+        )
+        if endpoint_length_diff > Config.PNP_MAX_ENDPOINT_LENGTH_DIFF_RATIO:
+            result.reason = (
+                f"灯条端点长度差异过大: {endpoint_length_diff:.2f} > "
+                f"{Config.PNP_MAX_ENDPOINT_LENGTH_DIFF_RATIO}"
+            )
+            return result
+
         if Config.DEBUG:
             print("\n[PnP] 输入:")
             print("  灯条中心线端点 [L_TOP, L_BOTTOM, R_BOTTOM, R_TOP]:")
             for label, pt in zip(['L_TOP', 'L_BOTTOM', 'R_BOTTOM', 'R_TOP'], image_points):
                 print(f"    {label}: ({pt[0]:.1f}, {pt[1]:.1f})")
 
-        # PnP求解
-        flags = cv2.SOLVEPNP_IPPE if Config.PNP_USE_IPPE else cv2.SOLVEPNP_ITERATIVE
-        try:
-            success, rvec, tvec = cv2.solvePnP(
-                object_points, image_points, self.camera_matrix, self.dist_coeffs, flags=flags
-            )
-        except cv2.error:
-            # 对于不支持 IPPE 的 OpenCV 版本，仍可使用通用迭代解算。
-            success, rvec, tvec = cv2.solvePnP(
-                object_points, image_points, self.camera_matrix, self.dist_coeffs,
-                flags=cv2.SOLVEPNP_ITERATIVE
-            )
+        # IPPE 对平面目标通常返回两个候选解。综合重投影误差和上一帧连续性选解，
+        # 再用 LM 做一次局部优化；OpenCV 不支持该接口时退回通用迭代法。
+        success, rvec, tvec = self._solve_pose(object_points, image_points)
 
         result.success = success
 
@@ -105,21 +112,16 @@ class PoseEstimator:
                 print(f"[PnP] ❌ 失败: {result.reason}")
             return result
 
-        result.rvec = rvec
-        result.tvec = tvec
-
-        # 提取XYZ
-        result.x = tvec[0, 0]
-        result.y = tvec[1, 0]
-        result.z = tvec[2, 0]
+        raw_rvec = rvec.copy()
+        raw_tvec = tvec.copy()
 
         if Config.DEBUG:
             print(f"\n[PnP] 初步结果:")
             print(f"  rvec: {rvec.flatten()}")
             print(f"  tvec: {tvec.flatten()}")
-            print(f"  X = {result.x:.3f} m")
-            print(f"  Y = {result.y:.3f} m")
-            print(f"  Z = {result.z:.3f} m")
+            print(f"  X = {raw_tvec[0, 0]:.3f} m")
+            print(f"  Y = {raw_tvec[1, 0]:.3f} m")
+            print(f"  Z = {raw_tvec[2, 0]:.3f} m")
 
         # 验证1：重投影误差
         reprojection_error = self._compute_reprojection_error(
@@ -137,8 +139,8 @@ class PoseEstimator:
             return result
 
         # 验证2：距离合理性
-        if not self._validate_distance(result.z):
-            result.reason = f"距离不合理: Z={result.z:.3f}m"
+        if not self._validate_distance(raw_tvec[2, 0]):
+            result.reason = f"距离不合理: Z={raw_tvec[2, 0]:.3f}m"
             if Config.DEBUG:
                 print(f"[PnP] ❌ 无效: {result.reason}")
             return result
@@ -149,6 +151,15 @@ class PoseEstimator:
             if Config.DEBUG:
                 print(f"[PnP] ❌ 无效: {result.reason}")
             return result
+
+        self._previous_solution_rvec = raw_rvec
+        self._previous_solution_tvec = raw_tvec
+        rvec, tvec = self._apply_temporal_filter(raw_rvec, raw_tvec)
+        result.rvec = rvec
+        result.tvec = tvec
+        result.x = float(tvec[0, 0])
+        result.y = float(tvec[1, 0])
+        result.z = float(tvec[2, 0])
 
         # 计算欧拉角
         roll, pitch, yaw = self.rotation_vector_to_euler(rvec)
@@ -168,6 +179,114 @@ class PoseEstimator:
             print("[PnP] ✅ 有效")
 
         return result
+
+    def _solve_pose(self, object_points, image_points):
+        """求解平面 PnP，并在 IPPE 双解中选择稳定且重投影误差较小的解。"""
+        candidates = []
+        if Config.PNP_USE_IPPE and hasattr(cv2, 'solvePnPGeneric'):
+            try:
+                output = cv2.solvePnPGeneric(
+                    object_points, image_points, self.camera_matrix,
+                    self.dist_coeffs, flags=cv2.SOLVEPNP_IPPE
+                )
+                success, rvecs, tvecs = output[:3]
+                if success:
+                    for rvec, tvec in zip(rvecs, tvecs):
+                        rvec = np.asarray(rvec, dtype=np.float64).reshape(3, 1)
+                        tvec = np.asarray(tvec, dtype=np.float64).reshape(3, 1)
+                        if self._validate_values(tvec) and tvec[2, 0] > 0:
+                            candidates.append((rvec, tvec))
+            except cv2.error:
+                candidates = []
+
+        if candidates:
+            rvec, tvec = min(
+                candidates,
+                key=lambda pose: self._pose_candidate_cost(
+                    object_points, image_points, pose[0], pose[1]
+                )
+            )
+        else:
+            try:
+                success, rvec, tvec = cv2.solvePnP(
+                    object_points, image_points, self.camera_matrix,
+                    self.dist_coeffs, flags=cv2.SOLVEPNP_ITERATIVE
+                )
+            except cv2.error:
+                return False, None, None
+            if not success:
+                return False, None, None
+
+        if hasattr(cv2, 'solvePnPRefineLM'):
+            try:
+                rvec, tvec = cv2.solvePnPRefineLM(
+                    object_points, image_points, self.camera_matrix,
+                    self.dist_coeffs, rvec, tvec
+                )
+            except cv2.error:
+                pass
+        return True, rvec, tvec
+
+    def _pose_candidate_cost(self, object_points, image_points, rvec, tvec):
+        cost = float(self._compute_reprojection_error(
+            object_points, image_points, rvec, tvec
+        ))
+        if self._previous_solution_tvec is None:
+            return cost
+
+        previous_range = float(np.linalg.norm(self._previous_solution_tvec)) + 1e-6
+        relative_position_change = float(
+            np.linalg.norm(tvec - self._previous_solution_tvec) / previous_range
+        )
+        rotation_change = self._rotation_difference_degrees(
+            self._previous_solution_rvec, rvec
+        )
+        return (
+            cost +
+            Config.PNP_TEMPORAL_POSITION_WEIGHT * relative_position_change +
+            Config.PNP_TEMPORAL_ROTATION_WEIGHT * rotation_change
+        )
+
+    @staticmethod
+    def _rotation_difference_degrees(rvec_a, rvec_b):
+        rmat_a, _ = cv2.Rodrigues(rvec_a)
+        rmat_b, _ = cv2.Rodrigues(rvec_b)
+        delta = rmat_a.T @ rmat_b
+        cosine = np.clip((np.trace(delta) - 1.0) / 2.0, -1.0, 1.0)
+        return float(np.degrees(np.arccos(cosine)))
+
+    def _apply_temporal_filter(self, rvec, tvec):
+        """对有效姿态做低延迟 EMA，并把旋转矩阵投影回合法旋转。"""
+        if self._filtered_tvec is None:
+            self._filtered_rvec = rvec.copy()
+            self._filtered_tvec = tvec.copy()
+            return rvec.copy(), tvec.copy()
+
+        alpha = float(np.clip(Config.POSE_EMA_ALPHA, 0.0, 1.0))
+        filtered_tvec = alpha * tvec + (1.0 - alpha) * self._filtered_tvec
+
+        previous_rotation, _ = cv2.Rodrigues(self._filtered_rvec)
+        current_rotation, _ = cv2.Rodrigues(rvec)
+        blended_rotation = (
+            (1.0 - alpha) * previous_rotation + alpha * current_rotation
+        )
+        u, _, vt = np.linalg.svd(blended_rotation)
+        filtered_rotation = u @ vt
+        if np.linalg.det(filtered_rotation) < 0:
+            u[:, -1] *= -1
+            filtered_rotation = u @ vt
+        filtered_rvec, _ = cv2.Rodrigues(filtered_rotation)
+
+        self._filtered_rvec = filtered_rvec
+        self._filtered_tvec = filtered_tvec
+        return filtered_rvec.copy(), filtered_tvec.copy()
+
+    def reset_tracking(self):
+        """清除 PnP 的多解选择和滤波状态。"""
+        self._previous_solution_rvec = None
+        self._previous_solution_tvec = None
+        self._filtered_rvec = None
+        self._filtered_tvec = None
 
     def _compute_reprojection_error(self, object_points, image_points, rvec, tvec):
         """

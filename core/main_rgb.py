@@ -25,6 +25,9 @@ class LightTrackingSystem:
         self.pose_estimator = None
         self.measurement_panel = None
         self.processed_light_frame = None
+        self.last_valid_pose_result = None
+        self.last_displacement = None
+        self.pose_missed_frames = 0
 
         # 初始位姿
         self.initial_tvec = None
@@ -134,10 +137,15 @@ class LightTrackingSystem:
 
         # 3. 如果没有配对成功
         if left_bar is None or right_bar is None:
-            self._update_measurement_panel(None, "NO VALID LIGHT PAIR")
+            held = self._hold_last_pose(result_frame, "NO VALID LIGHT PAIR")
+            if not held:
+                self._update_measurement_panel(None, "NO VALID LIGHT PAIR")
             if Config.DISPLAY_ANNOTATIONS:
-                cv2.putText(result_frame, "No valid light bar pair found", (10, 30),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+                message = "Target temporarily lost - holding pose" if held else \
+                    "No valid light bar pair found"
+                color = (0, 255, 255) if held else (0, 0, 255)
+                cv2.putText(result_frame, message, (10, 30),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
                 cv2.putText(result_frame, f"Candidates: {len(valid_candidates)}", (10, 60),
                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
             return result_frame
@@ -150,10 +158,11 @@ class LightTrackingSystem:
             right_center = tuple(right_bar.center.astype(int))
             cv2.line(result_frame, left_center, right_center, (0, 0, 255), 2)
 
-        # 6. PnP姿态估计（使用两条灯带的8个点）
+        # 6. PnP姿态估计（使用两条灯带中心线的4个端点）
         pose_result = self.pose_estimator.estimate_pose_two_bars(left_bar, right_bar)
 
         if pose_result.valid:
+            self.pose_missed_frames = 0
             # 保存初始位姿
             if self.initial_tvec is None:
                 self.initial_tvec = pose_result.tvec.copy()
@@ -174,15 +183,54 @@ class LightTrackingSystem:
             self._update_measurement_panel(
                 pose_result, displacement=(dx, dy, dz, distance)
             )
+            self.last_valid_pose_result = pose_result
+            self.last_displacement = (dx, dy, dz, distance)
         else:
-            self._update_measurement_panel(None, f"PnP INVALID: {pose_result.reason}")
+            held = self._hold_last_pose(
+                result_frame, f"PnP INVALID: {pose_result.reason}"
+            )
+            if not held:
+                self._update_measurement_panel(None, f"PnP INVALID: {pose_result.reason}")
             if Config.DISPLAY_ANNOTATIONS:
-                cv2.putText(result_frame, "PnP: INVALID", (10, frame.shape[0] - 60),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                status_text = "PnP: HOLD" if held else "PnP: INVALID"
+                status_color = (0, 255, 255) if held else (0, 0, 255)
+                cv2.putText(result_frame, status_text, (10, frame.shape[0] - 60),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, status_color, 2)
                 cv2.putText(result_frame, pose_result.reason, (10, frame.shape[0] - 30),
                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
         return result_frame
+
+    def _hold_last_pose(self, frame, reason):
+        """检测短暂丢失时保留最近一次有效数值，超过限度后清除跟踪状态。"""
+        self.pose_missed_frames += 1
+        can_hold = (
+            self.last_valid_pose_result is not None and
+            self.last_displacement is not None and
+            self.pose_missed_frames <= Config.POSE_HOLD_FRAMES
+        )
+        if not can_hold:
+            if self.pose_missed_frames == Config.POSE_HOLD_FRAMES + 1:
+                self.last_valid_pose_result = None
+                self.last_displacement = None
+                if self.pose_estimator is not None:
+                    self.pose_estimator.reset_tracking()
+            return False
+
+        hold_status = (
+            f"HOLD {self.pose_missed_frames}/{Config.POSE_HOLD_FRAMES}: {reason}"
+        )
+        self._update_measurement_panel(
+            self.last_valid_pose_result,
+            status=hold_status,
+            displacement=self.last_displacement
+        )
+        if Config.DISPLAY_ANNOTATIONS:
+            dx, dy, dz, distance = self.last_displacement
+            self._display_pose_info(
+                frame, self.last_valid_pose_result, dx, dy, dz, distance
+            )
+        return True
 
     def _update_measurement_panel(self, pose_result, status=None, displacement=None):
         """更新独立的目标位置、位移与姿态数值窗口。"""
@@ -191,6 +239,10 @@ class LightTrackingSystem:
         font = cv2.FONT_HERSHEY_SIMPLEX
 
         cv2.putText(panel, "POSE MEASUREMENT", (24, 38), font, 0.85, red, 2)
+
+        if status and pose_result is not None and pose_result.valid:
+            cv2.putText(panel, status[:48], (24, 60), font, 0.38,
+                       (0, 255, 255), 1)
 
         if pose_result is None or not pose_result.valid:
             message = status or "WAITING FOR TARGET"

@@ -8,19 +8,29 @@ import numpy as np
 class Config:
     """系统配置类"""
 
+    # ==================== RealSense RGB 成像参数 ====================
+    # 启动后先让自动曝光/白平衡稳定，再锁定当前值，避免手或其他物体入镜时
+    # 整帧亮度和色温变化导致固定 HSV 阈值瞬间失效。
+    CAMERA_LOCK_AUTO_CONTROLS = True
+    CAMERA_WARMUP_FRAMES = 30
+    # None 表示锁定预热结束时相机自动计算出的数值；也可填写固定数值覆盖。
+    CAMERA_MANUAL_EXPOSURE = None
+    CAMERA_MANUAL_GAIN = None
+    CAMERA_MANUAL_WHITE_BALANCE = None
+
     # ==================== 灯带物理尺寸 (单位：米) ====================
     # 真实测量值（宽度包含可见光晕）
-    LIGHT_LENGTH = 0.3  # 260mm
+    LIGHT_LENGTH = 0.3  # 300mm
     LIGHT_WIDTH = 0.014   # 14mm（1.4cm，包含光晕）
 
     # 两条灯带之间的距离（中心距离，单位：米）
     # 这是两条灯带实际安装位置，用于建立3D模型
     LIGHT_SPACING = 0.165  # 16.5cm
 
-    # PnP 尺度标定：手测相机至目标中心为 1.300m 时，当前输出约 1.500m。
-    # 新系数 = 旧系数 1.206 × (1.300 / 1.500) = 1.045。
-    # 后续重标定时：新系数 = 当前系数 × (真实距离 / 当前 Range)。
-    PNP_MODEL_SCALE = 1.045
+    # 多距离标定点（真实值 -> 原 Range）：
+    # 1.000->1.012, 1.300->1.335, 1.600->1.609, 2.000->2.040 m。
+    # 最小二乘统一修正倍率 0.983786，修正后 RMSE 约 0.0116 m。
+    PNP_MODEL_SCALE = 1.028057
 
     # ==================== 通道差分检测参数 ====================
     # 红灯通道差分 - 实际标定值
@@ -90,6 +100,10 @@ class Config:
     # 斜视后灯条短边可能仅剩 3--5px，5x5 开运算会将其完全腐蚀。
     MORPH_KERNEL_SIZE = 3
 
+    # 中心线端点使用轮廓点在线方向投影的分位数，忽略轮廓顶端/底端的少量噪点。
+    LIGHT_ENDPOINT_LOW_PERCENTILE = 2.0
+    LIGHT_ENDPOINT_HIGH_PERCENTILE = 98.0
+
     # ==================== 灯条候选筛选参数 ====================
     # 基础筛选
     MIN_LIGHT_BAR_AREA = 50       # 最小面积(px²)
@@ -130,26 +144,40 @@ class Config:
     MAX_ANGLE_DIFF = 15.0          # 角度差（度）
 
     # 距离约束
-    # 当前目标中两灯带中心距约为灯带长度的 0.36 倍；留出姿态与轮廓误差余量。
+    # 当前目标中两灯带中心距约为灯带长度的 0.55 倍；留出姿态与轮廓误差余量。
     MIN_PAIR_DISTANCE_RATIO = 0.30  # 水平中心距/平均灯条长度
     MAX_PAIR_DISTANCE_RATIO = 4.0
 
     # 垂直对齐
     MAX_VERTICAL_OFFSET_RATIO = 1.0  # 垂直偏移/平均长度
 
-    # 配对评分权重
-    WEIGHT_LENGTH_SIMILARITY = 0.20
-    WEIGHT_WIDTH_SIMILARITY = 0.10
-    WEIGHT_ANGLE_SIMILARITY = 0.20
-    WEIGHT_DISTANCE = 0.20
-    WEIGHT_ALIGNMENT = 0.15
-    WEIGHT_VERTICAL_OVERLAP = 0.15
+    # 距离得分以真实“中心距/灯条长度”为目标；透视会压缩横向间距，因此保留较宽容差。
+    EXPECTED_PAIR_DISTANCE_RATIO = LIGHT_SPACING / LIGHT_LENGTH
+    PAIR_DISTANCE_SCORE_SIGMA = 0.65
+
+    # 配对评分权重，总和为 1。时序项优先选择靠近上一帧目标的候选对。
+    WEIGHT_LENGTH_SIMILARITY = 0.17
+    WEIGHT_WIDTH_SIMILARITY = 0.08
+    WEIGHT_ANGLE_SIMILARITY = 0.16
+    WEIGHT_DISTANCE = 0.18
+    WEIGHT_ALIGNMENT = 0.13
+    WEIGHT_VERTICAL_OVERLAP = 0.13
+    WEIGHT_TEMPORAL_CONTINUITY = 0.15
+    TRACK_ASSOCIATION_SIGMA = 0.75
+    TRACK_MAX_MISSED_FRAMES = 3
 
     # 最小配对得分
     MIN_PAIR_SCORE = 0.5
 
     # 平面灯条对 PnP：优先使用 IPPE；不支持时自动退回迭代法。
     PNP_USE_IPPE = True
+
+    # IPPE 平面双解选择与姿态平滑。位置变化使用相对距离，旋转变化使用角度。
+    PNP_TEMPORAL_POSITION_WEIGHT = 3.0
+    PNP_TEMPORAL_ROTATION_WEIGHT = 0.02
+    POSE_EMA_ALPHA = 0.6
+    POSE_HOLD_FRAMES = 2
+    PNP_MAX_ENDPOINT_LENGTH_DIFF_RATIO = 0.45
 
     # ==================== PnP参数 ====================
     # 重投影误差阈值（像素）- 暂时放宽

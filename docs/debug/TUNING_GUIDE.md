@@ -167,6 +167,29 @@ MAX_REPROJECTION_ERROR = 8.0
 4. **使用'd'键**: 切换显示所有候选，直观看到哪些被检测/过滤
 5. **保存好的帧**: 按's'保存，用于离线调试
 
+### 时序稳定与响应速度
+
+```python
+POSE_EMA_ALPHA = 0.45
+POSE_HOLD_FRAMES = 2
+TRACK_ASSOCIATION_SIGMA = 0.75
+```
+
+- `POSE_EMA_ALPHA` 越大响应越快，越小数值越平滑；建议在 `0.35~0.70` 内调整。
+- `POSE_HOLD_FRAMES` 只在短暂丢检时保留最近有效结果，超过该帧数立即失效。
+- `TRACK_ASSOCIATION_SIGMA` 越小越偏向上一帧目标，车辆快速运动时不宜过小。
+
+### 多距离尺度标定
+
+目标正对相机，在多个距离各记录约 20 帧 Range 的中位数，然后运行：
+
+```bash
+python -m test.calibrate_distance_scale 1.00:读数 1.30:读数 1.60:读数 2.00:读数
+```
+
+将工具输出的 `PNP_MODEL_SCALE` 写回 `core/config.py`。如果修正后的 RMSE
+仍超过约 3 cm，应检查 RGB 内参、灯条有效长度、中心距和轮廓端点完整性。
+
 ---
 
 ## ⚠️ 注意事项

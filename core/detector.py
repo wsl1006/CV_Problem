@@ -41,23 +41,36 @@ class LightBarCandidate:
         rect_area = w * h
         self.rectangularity = self.area / (rect_area + 1e-6)
 
-        # 最小二乘拟合灯条中心线，再与轮廓外接框的上下边界相交得到端点。
-        # 这样不会把 minAreaRect 的短边抖动和光晕宽度带入 PnP。
+        # 最小二乘拟合灯条中心线，并用轮廓点在线方向上的稳健分位数确定端点。
+        # 相比 boundingRect 的极值，分位数不会被顶端/底端的少量光晕噪点拉长。
+        x, y, roi_width, roi_height = cv2.boundingRect(contour)
+        local_mask = np.zeros((roi_height, roi_width), dtype=np.uint8)
+        local_contour = contour.astype(np.int32) - np.array([[[x, y]]], dtype=np.int32)
+        cv2.drawContours(local_mask, [local_contour], -1, 255, cv2.FILLED)
+        pixel_y, pixel_x = np.nonzero(local_mask)
+        contour_points = np.column_stack([
+            pixel_x.astype(np.float32) + x,
+            pixel_y.astype(np.float32) + y,
+        ])
         vx, vy, x0, y0 = cv2.fitLine(
-            contour, cv2.DIST_L2, 0, 0.01, 0.01
+            contour_points, cv2.DIST_L2, 0, 0.01, 0.01
         ).reshape(4)
-        x, y, _, h = cv2.boundingRect(contour)
-        top_y = float(y)
-        bottom_y = float(y + h - 1)
-        if abs(vy) > 1e-6:
-            top_x = x0 + (top_y - y0) * vx / vy
-            bottom_x = x0 + (bottom_y - y0) * vx / vy
-            self.top = np.array([top_x, top_y], dtype=np.float32)
-            self.bottom = np.array([bottom_x, bottom_y], dtype=np.float32)
-        else:
-            # 水平轮廓会在后续角度筛选中被拒绝；这里仍保证端点有效。
-            self.top = np.array([x0, top_y], dtype=np.float32)
-            self.bottom = np.array([x0, bottom_y], dtype=np.float32)
+        direction = np.array([vx, vy], dtype=np.float32)
+        direction /= np.linalg.norm(direction) + 1e-6
+        if direction[1] < 0:
+            direction = -direction
+        origin = np.array([x0, y0], dtype=np.float32)
+        projections = (contour_points - origin) @ direction
+        low, high = np.percentile(
+            projections,
+            [Config.LIGHT_ENDPOINT_LOW_PERCENTILE,
+             Config.LIGHT_ENDPOINT_HIGH_PERCENTILE]
+        )
+        self.top = (origin + float(low) * direction).astype(np.float32)
+        self.bottom = (origin + float(high) * direction).astype(np.float32)
+        if self.top[1] > self.bottom[1]:
+            self.top, self.bottom = self.bottom, self.top
+        self.line_length = float(max(high - low, 1e-6))
         self.center = (self.top + self.bottom) / 2
 
         # 亮度和颜色响应（稍后计算）
@@ -97,6 +110,8 @@ class LightDetector:
     def __init__(self):
         self.config = Config()
         self._color_rejection_counts = {}
+        self._previous_pair_centers = None
+        self._missed_frames = 0
 
     def detect(self, frame):
         """
@@ -154,7 +169,14 @@ class LightDetector:
 
             left_bar = best_pair.left_bar
             right_bar = best_pair.right_bar
+            self._previous_pair_centers = np.vstack([
+                left_bar.center.copy(), right_bar.center.copy()
+            ])
+            self._missed_frames = 0
         else:
+            self._missed_frames += 1
+            if self._missed_frames > Config.TRACK_MAX_MISSED_FRAMES:
+                self._previous_pair_centers = None
             if Config.DEBUG:
                 print("\n[Detector] ❌ 无法找到有效的灯条配对")
 
@@ -506,11 +528,17 @@ class LightDetector:
         if not Config.MIN_PAIR_DISTANCE_RATIO <= distance_ratio <= Config.MAX_PAIR_DISTANCE_RATIO:
             pair.rejection_reason = f'distance_ratio={distance_ratio:.2f}'
             return 0.0
-        distance_score = 1.0
+        expected_ratio = Config.EXPECTED_PAIR_DISTANCE_RATIO
+        relative_distance_error = abs(distance_ratio - expected_ratio) / (expected_ratio + 1e-6)
+        distance_score = float(np.exp(
+            -0.5 * (relative_distance_error / Config.PAIR_DISTANCE_SCORE_SIGMA) ** 2
+        ))
 
         vertical_offset = abs(bar1.center[1] - bar2.center[1])
         vertical_ratio = vertical_offset / pair.avg_length
         alignment_score = max(0, 1.0 - vertical_ratio / Config.MAX_VERTICAL_OFFSET_RATIO)
+
+        temporal_score = self._temporal_pair_score(pair)
 
         score = (
             Config.WEIGHT_LENGTH_SIMILARITY * length_score +
@@ -518,11 +546,30 @@ class LightDetector:
             Config.WEIGHT_ANGLE_SIMILARITY * angle_score +
             Config.WEIGHT_DISTANCE * distance_score +
             Config.WEIGHT_ALIGNMENT * alignment_score +
-            Config.WEIGHT_VERTICAL_OVERLAP * overlap_ratio
+            Config.WEIGHT_VERTICAL_OVERLAP * overlap_ratio +
+            Config.WEIGHT_TEMPORAL_CONTINUITY * temporal_score
         )
         if score <= Config.MIN_PAIR_SCORE:
             pair.rejection_reason = f'score_below_threshold={score:.3f}'
         return score
+
+    def _temporal_pair_score(self, pair):
+        """根据左右灯条相对上一帧的位移计算连续性得分。"""
+        if self._previous_pair_centers is None:
+            return 1.0
+        current = np.vstack([pair.left_bar.center, pair.right_bar.center])
+        mean_shift = float(np.mean(np.linalg.norm(
+            current - self._previous_pair_centers, axis=1
+        )))
+        normalized_shift = mean_shift / (pair.avg_length + 1e-6)
+        return float(np.exp(
+            -0.5 * (normalized_shift / Config.TRACK_ASSOCIATION_SIGMA) ** 2
+        ))
+
+    def reset_tracking(self):
+        """清除候选配对的帧间关联状态。"""
+        self._previous_pair_centers = None
+        self._missed_frames = 0
 
     def _build_target_corners(self, pair):
         """

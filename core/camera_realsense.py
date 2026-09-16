@@ -7,6 +7,7 @@ RealSense D435i 相机模块 - 重构版
 """
 import pyrealsense2 as rs
 import numpy as np
+from .config import Config
 
 
 class RealSenseCamera:
@@ -45,6 +46,13 @@ class RealSenseCamera:
 
             # 启动管道
             profile = self.pipeline.start(self.config)
+
+            # 自动控制会在手或亮物体进入画面时改变整帧 HSV。先让相机完成
+            # 启动收敛，再锁定曝光、增益和白平衡，保持颜色分割稳定。
+            try:
+                self._lock_color_controls(profile)
+            except Exception as exc:
+                print(f"⚠️ 无法锁定 RGB 参数，将继续使用自动控制: {exc}")
 
             # 获取RGB彩色流的profile
             color_stream = profile.get_stream(rs.stream.color)
@@ -122,6 +130,81 @@ class RealSenseCamera:
         except Exception as e:
             print(f"\n❌ 启动相机时发生未知错误: {e}")
             return False
+
+    def _lock_color_controls(self, profile):
+        """预热 RGB 相机并锁定自动曝光和自动白平衡。"""
+        if not Config.CAMERA_LOCK_AUTO_CONTROLS:
+            return
+
+        warmup_frames = max(0, int(Config.CAMERA_WARMUP_FRAMES))
+        for _ in range(warmup_frames):
+            self.pipeline.wait_for_frames()
+
+        color_sensor = self._find_color_sensor(profile)
+        if color_sensor is None:
+            print("⚠️ 未找到 RGB 传感器，无法锁定曝光和白平衡")
+            return
+
+        exposure = self._read_or_configured_option(
+            color_sensor, rs.option.exposure, Config.CAMERA_MANUAL_EXPOSURE
+        )
+        gain = self._read_or_configured_option(
+            color_sensor, rs.option.gain, Config.CAMERA_MANUAL_GAIN
+        )
+        white_balance = self._read_or_configured_option(
+            color_sensor, rs.option.white_balance,
+            Config.CAMERA_MANUAL_WHITE_BALANCE
+        )
+
+        try:
+            if color_sensor.supports(rs.option.enable_auto_exposure):
+                color_sensor.set_option(rs.option.enable_auto_exposure, 0.0)
+            self._set_option_if_supported(color_sensor, rs.option.exposure, exposure)
+            self._set_option_if_supported(color_sensor, rs.option.gain, gain)
+
+            if color_sensor.supports(rs.option.enable_auto_white_balance):
+                color_sensor.set_option(rs.option.enable_auto_white_balance, 0.0)
+            self._set_option_if_supported(
+                color_sensor, rs.option.white_balance, white_balance
+            )
+            print(
+                "🔒 RGB 参数已锁定: "
+                f"Exposure={exposure:.1f}, Gain={gain:.1f}, "
+                f"WhiteBalance={white_balance:.0f}"
+            )
+        except RuntimeError as exc:
+            print(f"⚠️ 锁定 RGB 参数失败，将继续使用相机自动控制: {exc}")
+
+    @staticmethod
+    def _find_color_sensor(profile):
+        """从设备传感器列表中找到 RGB/Color 传感器。"""
+        fallback = None
+        for sensor in profile.get_device().query_sensors():
+            try:
+                name = sensor.get_info(rs.camera_info.name).lower()
+            except RuntimeError:
+                name = ""
+            if "rgb" in name or "color" in name:
+                return sensor
+            if sensor.supports(rs.option.white_balance):
+                fallback = sensor
+        return fallback
+
+    @staticmethod
+    def _read_or_configured_option(sensor, option, configured_value):
+        if configured_value is not None:
+            return float(configured_value)
+        if sensor.supports(option):
+            return float(sensor.get_option(option))
+        return 0.0
+
+    @staticmethod
+    def _set_option_if_supported(sensor, option, value):
+        if not sensor.supports(option):
+            return
+        option_range = sensor.get_option_range(option)
+        clipped = min(max(float(value), option_range.min), option_range.max)
+        sensor.set_option(option, clipped)
 
     def read(self):
         """
