@@ -10,6 +10,15 @@ import numpy as np
 from .geometry import GeometryProcessor
 from .config import Config
 
+# 固定算法默认值；日常只需调整 core/config.py。
+PNP_USE_IPPE = True
+PNP_TEMPORAL_POSITION_WEIGHT = 3.0
+PNP_TEMPORAL_ROTATION_WEIGHT = 0.02
+POSE_EMA_ALPHA = 0.6
+PNP_MAX_ENDPOINT_LENGTH_DIFF_RATIO = 0.45
+MIN_DISTANCE = 0.05
+MAX_DISTANCE = 10.0
+
 
 class PoseResult:
     """PnP结果类"""
@@ -87,10 +96,10 @@ class PoseEstimator:
         endpoint_length_diff = abs(left_length - right_length) / (
             0.5 * (left_length + right_length) + 1e-6
         )
-        if endpoint_length_diff > Config.PNP_MAX_ENDPOINT_LENGTH_DIFF_RATIO:
+        if endpoint_length_diff > PNP_MAX_ENDPOINT_LENGTH_DIFF_RATIO:
             result.reason = (
                 f"灯条端点长度差异过大: {endpoint_length_diff:.2f} > "
-                f"{Config.PNP_MAX_ENDPOINT_LENGTH_DIFF_RATIO}"
+                f"{PNP_MAX_ENDPOINT_LENGTH_DIFF_RATIO}"
             )
             return result
 
@@ -183,7 +192,7 @@ class PoseEstimator:
     def _solve_pose(self, object_points, image_points):
         """求解平面 PnP，并在 IPPE 双解中选择稳定且重投影误差较小的解。"""
         candidates = []
-        if Config.PNP_USE_IPPE and hasattr(cv2, 'solvePnPGeneric'):
+        if PNP_USE_IPPE and hasattr(cv2, 'solvePnPGeneric'):
             try:
                 output = cv2.solvePnPGeneric(
                     object_points, image_points, self.camera_matrix,
@@ -243,8 +252,8 @@ class PoseEstimator:
         )
         return (
             cost +
-            Config.PNP_TEMPORAL_POSITION_WEIGHT * relative_position_change +
-            Config.PNP_TEMPORAL_ROTATION_WEIGHT * rotation_change
+            PNP_TEMPORAL_POSITION_WEIGHT * relative_position_change +
+            PNP_TEMPORAL_ROTATION_WEIGHT * rotation_change
         )
 
     @staticmethod
@@ -262,7 +271,7 @@ class PoseEstimator:
             self._filtered_tvec = tvec.copy()
             return rvec.copy(), tvec.copy()
 
-        alpha = float(np.clip(Config.POSE_EMA_ALPHA, 0.0, 1.0))
+        alpha = float(np.clip(POSE_EMA_ALPHA, 0.0, 1.0))
         filtered_tvec = alpha * tvec + (1.0 - alpha) * self._filtered_tvec
 
         previous_rotation, _ = cv2.Rodrigues(self._filtered_rvec)
@@ -323,7 +332,7 @@ class PoseEstimator:
 
     def _validate_distance(self, z):
         """验证距离合理性"""
-        if z < Config.MIN_DISTANCE or z > Config.MAX_DISTANCE:
+        if z < MIN_DISTANCE or z > MAX_DISTANCE:
             return False
         return True
 

@@ -1,6 +1,5 @@
 """
-主程序 - RealSense D435i RGB 灯带检测系统
-完全重构版：基于灯条检测+配对的完整算法
+主程序 - RealSense D435i RGB 灯带检测与 PnP 位姿估计
 """
 import cv2
 import numpy as np
@@ -13,6 +12,18 @@ from .geometry import GeometryProcessor
 from .pose import PoseEstimator
 from .config import Config
 
+# 固定算法默认值；日常只需调整 core/config.py。
+DISPLAY_RED_ONLY = False
+DISPLAY_TARGET_DILATE_SIZE = 25
+DISPLAY_RED_MARGIN = 12
+DISPLAY_UNPAIRED_RED_CANDIDATES = False
+DISPLAY_ANNOTATIONS = True
+SHOW_MEASUREMENT_WINDOW = True
+POSE_HOLD_FRAMES = 2
+SAVE_RESULTS = True
+RESULTS_PATH = "results/"
+DEBUG_SHOW_ALL_CANDIDATES = False
+
 
 class LightTrackingSystem:
     """灯带跟踪系统 - 完全重构版"""
@@ -21,7 +32,6 @@ class LightTrackingSystem:
         """初始化系统"""
         self.camera = RealSenseCamera()
         self.detector = LightDetector()
-        self.geometry = GeometryProcessor()
         self.pose_estimator = None
         self.measurement_panel = None
         self.processed_light_frame = None
@@ -34,8 +44,8 @@ class LightTrackingSystem:
         self.initial_rvec = None
 
         # 创建结果保存目录
-        if Config.SAVE_RESULTS:
-            os.makedirs(Config.RESULTS_PATH, exist_ok=True)
+        if SAVE_RESULTS:
+            os.makedirs(RESULTS_PATH, exist_ok=True)
 
     def run(self):
         """运行主循环"""
@@ -59,7 +69,7 @@ class LightTrackingSystem:
         print("="*70 + "\n")
 
         frame_count = 0
-        show_debug = Config.DEBUG_SHOW_ALL_CANDIDATES
+        show_debug = DEBUG_SHOW_ALL_CANDIDATES
 
         try:
             while True:
@@ -78,7 +88,7 @@ class LightTrackingSystem:
                 cv2.imshow("Light Bar Detection + Matching + PnP", result_frame)
                 if self.processed_light_frame is not None:
                     cv2.imshow("Processed Light Bars", self.processed_light_frame)
-                if Config.SHOW_MEASUREMENT_WINDOW and self.measurement_panel is not None:
+                if SHOW_MEASUREMENT_WINDOW and self.measurement_panel is not None:
                     cv2.imshow("Pose Measurement", self.measurement_panel)
 
                 # 键盘控制
@@ -116,7 +126,7 @@ class LightTrackingSystem:
         # 显示使用红色目标图，检测和 PnP 仍使用上面的原始 frame，避免显示掩膜影响测量。
         if left_bar is not None and right_bar is not None:
             display_bars = [left_bar, right_bar]
-        elif Config.DISPLAY_UNPAIRED_RED_CANDIDATES:
+        elif DISPLAY_UNPAIRED_RED_CANDIDATES:
             display_bars = debug_info['all_candidates']
         else:
             display_bars = valid_candidates
@@ -126,13 +136,13 @@ class LightTrackingSystem:
             frame, display_bars, debug_info['mask_red']
         )
 
-        if Config.DISPLAY_RED_ONLY:
+        if DISPLAY_RED_ONLY:
             result_frame = self.processed_light_frame.copy()
         else:
             result_frame = frame.copy()
 
         # 2. 可视化所有灯条候选
-        if show_debug and Config.DISPLAY_ANNOTATIONS:
+        if show_debug and DISPLAY_ANNOTATIONS:
             self._draw_all_candidates(result_frame, valid_candidates)
 
         # 3. 如果没有配对成功
@@ -140,7 +150,7 @@ class LightTrackingSystem:
             held = self._hold_last_pose(result_frame, "NO VALID LIGHT PAIR")
             if not held:
                 self._update_measurement_panel(None, "NO VALID LIGHT PAIR")
-            if Config.DISPLAY_ANNOTATIONS:
+            if DISPLAY_ANNOTATIONS:
                 message = "Target temporarily lost - holding pose" if held else \
                     "No valid light bar pair found"
                 color = (0, 255, 255) if held else (0, 0, 255)
@@ -150,7 +160,7 @@ class LightTrackingSystem:
                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
             return result_frame
 
-        if Config.DISPLAY_ANNOTATIONS:
+        if DISPLAY_ANNOTATIONS:
             # 调试标注使用红色，保证不会改变纯红显示模式的颜色语义。
             self._draw_single_bar(result_frame, left_bar, "LEFT", (0, 0, 255))
             self._draw_single_bar(result_frame, right_bar, "RIGHT", (0, 0, 255))
@@ -174,7 +184,7 @@ class LightTrackingSystem:
                 self.initial_tvec, pose_result.tvec
             )
 
-            if Config.DISPLAY_ANNOTATIONS:
+            if DISPLAY_ANNOTATIONS:
                 # 仅在调试标注开启时绘制坐标轴和数值信息。
                 result_frame = self.pose_estimator.draw_axis(
                     result_frame, pose_result.rvec, pose_result.tvec, length=0.1
@@ -191,7 +201,7 @@ class LightTrackingSystem:
             )
             if not held:
                 self._update_measurement_panel(None, f"PnP INVALID: {pose_result.reason}")
-            if Config.DISPLAY_ANNOTATIONS:
+            if DISPLAY_ANNOTATIONS:
                 status_text = "PnP: HOLD" if held else "PnP: INVALID"
                 status_color = (0, 255, 255) if held else (0, 0, 255)
                 cv2.putText(result_frame, status_text, (10, frame.shape[0] - 60),
@@ -207,10 +217,10 @@ class LightTrackingSystem:
         can_hold = (
             self.last_valid_pose_result is not None and
             self.last_displacement is not None and
-            self.pose_missed_frames <= Config.POSE_HOLD_FRAMES
+            self.pose_missed_frames <= POSE_HOLD_FRAMES
         )
         if not can_hold:
-            if self.pose_missed_frames == Config.POSE_HOLD_FRAMES + 1:
+            if self.pose_missed_frames == POSE_HOLD_FRAMES + 1:
                 self.last_valid_pose_result = None
                 self.last_displacement = None
                 if self.pose_estimator is not None:
@@ -218,14 +228,14 @@ class LightTrackingSystem:
             return False
 
         hold_status = (
-            f"HOLD {self.pose_missed_frames}/{Config.POSE_HOLD_FRAMES}: {reason}"
+            f"HOLD {self.pose_missed_frames}/{POSE_HOLD_FRAMES}: {reason}"
         )
         self._update_measurement_panel(
             self.last_valid_pose_result,
             status=hold_status,
             displacement=self.last_displacement
         )
-        if Config.DISPLAY_ANNOTATIONS:
+        if DISPLAY_ANNOTATIONS:
             dx, dy, dz, distance = self.last_displacement
             self._display_pose_info(
                 frame, self.last_valid_pose_result, dx, dy, dz, distance
@@ -295,12 +305,12 @@ class LightTrackingSystem:
         if not bars:
             return np.zeros_like(frame)
 
-        size = Config.DISPLAY_TARGET_DILATE_SIZE
+        size = DISPLAY_TARGET_DILATE_SIZE
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (size, size))
         target_mask = cv2.dilate(target_mask, kernel)
 
         b, g, r = cv2.split(frame)
-        margin = Config.DISPLAY_RED_MARGIN
+        margin = DISPLAY_RED_MARGIN
         red_pixels = ((r.astype(np.int16) > g.astype(np.int16) + margin) &
                       (r.astype(np.int16) > b.astype(np.int16) + margin))
         target_pixels = target_mask > 0
@@ -347,9 +357,7 @@ class LightTrackingSystem:
             print(f"  box坐标: {box}")
 
         # 2. 提取并绘制4个角点（题目要求）
-        from .geometry import GeometryProcessor
-        geom = GeometryProcessor()
-        corners = geom.extract_bar_corners(bar)  # [TL, TR, BR, BL]
+        corners = GeometryProcessor().extract_bar_corners(bar)  # [TL, TR, BR, BL]
 
         corner_labels = ["TL", "TR", "BR", "BL"]
         corner_colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0)]
@@ -455,7 +463,7 @@ class LightTrackingSystem:
         """保存当前帧"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"frame_{timestamp}_{frame_count}.jpg"
-        filepath = os.path.join(Config.RESULTS_PATH, filename)
+        filepath = os.path.join(RESULTS_PATH, filename)
         cv2.imwrite(filepath, frame)
         print(f"✅ 已保存: {filepath}")
 

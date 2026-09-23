@@ -41,6 +41,19 @@ class OptimizationTests(unittest.TestCase):
         far_score = detector._score_pair(LightBarPair(left, far))
         self.assertGreater(expected_score, far_score)
 
+    def test_red_pair_is_detected_from_configured_hsv(self):
+        color = cv2.cvtColor(
+            np.uint8([[[20, 50, 245]]]), cv2.COLOR_HSV2BGR
+        )[0, 0].tolist()
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        cv2.rectangle(frame, (270, 130), (280, 330), color, -1)
+        cv2.rectangle(frame, (380, 130), (390, 330), color, -1)
+        left, right, candidates, _ = LightDetector().detect(frame)
+        self.assertEqual(len(candidates), 2)
+        self.assertIsNotNone(left)
+        self.assertIsNotNone(right)
+        self.assertLess(left.center[0], right.center[0])
+
     def test_ippe_recovers_synthetic_pose(self):
         camera_matrix = np.array([
             [600.0, 0.0, 320.0],

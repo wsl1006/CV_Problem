@@ -9,6 +9,13 @@ import pyrealsense2 as rs
 import numpy as np
 from .config import Config
 
+# 固定算法默认值；日常只需调整 core/config.py。
+CAMERA_LOCK_AUTO_CONTROLS = True
+CAMERA_WARMUP_FRAMES = 30
+CAMERA_MANUAL_EXPOSURE = None
+CAMERA_MANUAL_GAIN = None
+CAMERA_MANUAL_WHITE_BALANCE = None
+
 
 class RealSenseCamera:
     """Intel RealSense D435i 相机类 - 仅RGB模式"""
@@ -133,10 +140,10 @@ class RealSenseCamera:
 
     def _lock_color_controls(self, profile):
         """预热 RGB 相机并锁定自动曝光和自动白平衡。"""
-        if not Config.CAMERA_LOCK_AUTO_CONTROLS:
+        if not CAMERA_LOCK_AUTO_CONTROLS:
             return
 
-        warmup_frames = max(0, int(Config.CAMERA_WARMUP_FRAMES))
+        warmup_frames = max(0, int(CAMERA_WARMUP_FRAMES))
         for _ in range(warmup_frames):
             self.pipeline.wait_for_frames()
 
@@ -146,14 +153,14 @@ class RealSenseCamera:
             return
 
         exposure = self._read_or_configured_option(
-            color_sensor, rs.option.exposure, Config.CAMERA_MANUAL_EXPOSURE
+            color_sensor, rs.option.exposure, CAMERA_MANUAL_EXPOSURE
         )
         gain = self._read_or_configured_option(
-            color_sensor, rs.option.gain, Config.CAMERA_MANUAL_GAIN
+            color_sensor, rs.option.gain, CAMERA_MANUAL_GAIN
         )
         white_balance = self._read_or_configured_option(
             color_sensor, rs.option.white_balance,
-            Config.CAMERA_MANUAL_WHITE_BALANCE
+            CAMERA_MANUAL_WHITE_BALANCE
         )
 
         try:

@@ -10,6 +10,50 @@ import cv2
 import numpy as np
 from .config import Config
 
+# 固定算法默认值；日常只需调整 core/config.py。
+COLOR_CLASSIFICATION_DILATE_SIZE = 13
+MIN_RED_COLOR_RESPONSE = 8.0
+RED_COLOR_DOMINANCE_MARGIN = 45
+MIN_RED_COLOR_FRACTION = 0.03
+MIN_RED_HSV_FRACTION = 0.20
+MIN_RED_HSV_RESPONSE = 0.0
+MAX_RED_HSV_RESPONSE = 70.0
+MORPH_KERNEL_SIZE = 3
+LIGHT_ENDPOINT_LOW_PERCENTILE = 2.0
+LIGHT_ENDPOINT_HIGH_PERCENTILE = 98.0
+MIN_LIGHT_BAR_AREA = 50
+MAX_LIGHT_BAR_AREA = 50000
+MAX_LIGHT_BAR_AREA_RATIO = 0.20
+MIN_LIGHT_BAR_ASPECT_RATIO = 1.1
+MAX_LIGHT_BAR_ASPECT_RATIO = 50.0
+MIN_LIGHT_BAR_RECTANGULARITY = 0.50
+EXPECTED_LIGHT_BAR_ANGLE = 90.0
+LIGHT_BAR_ANGLE_TOLERANCE = 50.0
+MIN_LIGHT_BAR_BRIGHTNESS = 70
+MAX_LENGTH_DIFF_RATIO = 0.5
+MAX_WIDTH_DIFF_RATIO = 1.2
+MAX_AREA_RATIO = 3.0
+MIN_VERTICAL_OVERLAP_RATIO = 0.5
+MAX_HORIZONTAL_OVERLAP_RATIO = 0.2
+MAX_ANGLE_DIFF = 15.0
+MIN_PAIR_DISTANCE_RATIO = 0.30
+MAX_PAIR_DISTANCE_RATIO = 4.0
+MAX_VERTICAL_OFFSET_RATIO = 1.0
+EXPECTED_PAIR_DISTANCE_RATIO = Config.LIGHT_SPACING / Config.LIGHT_LENGTH
+PAIR_DISTANCE_SCORE_SIGMA = 0.65
+WEIGHT_LENGTH_SIMILARITY = 0.17
+WEIGHT_WIDTH_SIMILARITY = 0.08
+WEIGHT_ANGLE_SIMILARITY = 0.16
+WEIGHT_DISTANCE = 0.18
+WEIGHT_ALIGNMENT = 0.13
+WEIGHT_VERTICAL_OVERLAP = 0.13
+WEIGHT_TEMPORAL_CONTINUITY = 0.15
+TRACK_ASSOCIATION_SIGMA = 0.75
+TRACK_MAX_MISSED_FRAMES = 3
+MIN_PAIR_SCORE = 0.5
+DEBUG_SHOW_FILTERED = False
+DEBUG_SHOW_PAIRS = False
+
 
 class LightBarCandidate:
     """灯条候选类"""
@@ -63,8 +107,8 @@ class LightBarCandidate:
         projections = (contour_points - origin) @ direction
         low, high = np.percentile(
             projections,
-            [Config.LIGHT_ENDPOINT_LOW_PERCENTILE,
-             Config.LIGHT_ENDPOINT_HIGH_PERCENTILE]
+            [LIGHT_ENDPOINT_LOW_PERCENTILE,
+             LIGHT_ENDPOINT_HIGH_PERCENTILE]
         )
         self.top = (origin + float(low) * direction).astype(np.float32)
         self.bottom = (origin + float(high) * direction).astype(np.float32)
@@ -108,7 +152,6 @@ class LightDetector:
     """灯带检测器 - 完整重构版"""
 
     def __init__(self):
-        self.config = Config()
         self._color_rejection_counts = {}
         self._previous_pair_centers = None
         self._missed_frames = 0
@@ -124,10 +167,10 @@ class LightDetector:
             debug_info: 调试信息
         """
         # 1. 预处理和二值化
-        mask_red, mask_blue = self._preprocess(frame)
+        mask_red = self._preprocess(frame)
 
         # 2. 提取灯条候选
-        candidates = self._find_light_bar_candidates(frame, mask_red, mask_blue)
+        candidates = self._find_light_bar_candidates(frame, mask_red)
 
         if Config.DEBUG:
             print(f"\n[Detector] 检测到 {len(candidates)} 个灯条候选")
@@ -175,14 +218,13 @@ class LightDetector:
             self._missed_frames = 0
         else:
             self._missed_frames += 1
-            if self._missed_frames > Config.TRACK_MAX_MISSED_FRAMES:
+            if self._missed_frames > TRACK_MAX_MISSED_FRAMES:
                 self._previous_pair_centers = None
             if Config.DEBUG:
                 print("\n[Detector] ❌ 无法找到有效的灯条配对")
 
         debug_info = {
             'mask_red': mask_red,
-            'mask_blue': mask_blue,
             'all_candidates': candidates,
             'valid_candidates': valid_candidates,
             'best_pair': best_pair
@@ -191,132 +233,33 @@ class LightDetector:
         return left_bar, right_bar, valid_candidates, debug_info
 
     def _preprocess(self, frame):
-        """
-        预处理：通道差分 + HSV + 亮度联合检测
-
-        Returns:
-            mask_red: 红灯mask
-            mask_blue: 蓝灯mask
-        """
-        # 分离通道
-        B = frame[:, :, 0].astype(np.float32)
-        G = frame[:, :, 1].astype(np.float32)
-        R = frame[:, :, 2].astype(np.float32)
-
-        # HSV
+        """使用现场标定的 HSV 范围提取红色灯芯。"""
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        mask = cv2.inRange(hsv, Config.HSV_LOWER_RED1, Config.HSV_UPPER_RED1)
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (MORPH_KERNEL_SIZE,) * 2)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+        return cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
 
-        # 使用 HSV 的 V 通道作亮度门限。相比灰度图，它不会低估纯红灯条的亮度。
-        value_channel = hsv[:, :, 2]
-        _, mask_bright = cv2.threshold(
-            value_channel, Config.HSV_MIN_VALUE, 255, cv2.THRESH_BINARY
-        )
-
-        # 方法1：通道差分
-        red_diff = R - G
-        red_diff = np.clip(red_diff, 0, 255).astype(np.uint8)
-        _, mask_red_diff = cv2.threshold(red_diff, Config.RED_CHANNEL_DIFF_THRESHOLD, 255, cv2.THRESH_BINARY)
-
-        # 方法2：HSV 辅助检测。红色跨越 Hue=0/179，两个区间均需保留。
-        mask_red_hsv1 = cv2.inRange(hsv, Config.HSV_LOWER_RED1, Config.HSV_UPPER_RED1)
-        mask_red_hsv2 = cv2.inRange(hsv, Config.HSV_LOWER_RED2, Config.HSV_UPPER_RED2)
-        mask_red_hsv = cv2.bitwise_or(mask_red_hsv1, mask_red_hsv2)
-
-        # 参考 rm_vision 的灰度二值化：先提取过曝的白色灯芯，颜色在轮廓
-        # 提取后由其邻域 R/B 响应判断。近距离自动曝光时再补充高饱和红色区域，
-        # 以免白色灯芯灰度下降后整条灯带消失。
-        if Config.RED_USE_GRAYSCALE_CORE_MASK:
-            _, mask_red = cv2.threshold(
-                gray, Config.GRAYSCALE_CORE_THRESHOLD, 255, cv2.THRESH_BINARY
-            )
-            # 用户标定的灯芯低饱和但 Hue 稳定；直接并入 HSV 结果，避免它在
-            # 灰度略低于阈值时从候选掩膜中消失。
-            mask_red = cv2.bitwise_or(mask_red, mask_red_hsv)
-            if Config.RED_USE_CHROMA_MASK:
-                chroma_margin = Config.RED_COLOR_DOMINANCE_MARGIN
-                red_chroma = (
-                    (R > G + chroma_margin) &
-                    (R > B + chroma_margin) &
-                    (R >= Config.RED_CHROMA_MIN_VALUE)
-                )
-                mask_red = cv2.bitwise_or(mask_red, red_chroma.astype(np.uint8) * 255)
-        # 光晕较强时不直接并入整片 R-G 响应。斜视造成白色灯芯 Hue 漂移时，
-        # 只恢复红色响应邻域内的高亮核心。
-        elif Config.RED_USE_CHANNEL_DIFF:
-            mask_red_combined = cv2.bitwise_or(mask_red_diff, mask_red_hsv)
-            mask_red = cv2.bitwise_and(mask_red_combined, mask_bright)
-        else:
-            mask_red_combined = mask_red_hsv
-            if Config.RED_RECOVER_BRIGHT_CORE:
-                support_size = Config.RED_SUPPORT_DILATE_SIZE
-                support_kernel = cv2.getStructuringElement(
-                    cv2.MORPH_ELLIPSE, (support_size, support_size)
-                )
-                red_support = cv2.dilate(mask_red_diff, support_kernel)
-                _, mask_core = cv2.threshold(
-                    value_channel, Config.RED_CORE_MIN_VALUE, 255, cv2.THRESH_BINARY
-                )
-                mask_core = cv2.bitwise_and(mask_core, red_support)
-                mask_red_combined = cv2.bitwise_or(mask_red_combined, mask_core)
-            mask_red = cv2.bitwise_and(mask_red_combined, mask_bright)
-
-        # 蓝灯检测：B-R 通道差分 + HSV 辅助检测
-        blue_diff = B - R
-        blue_diff = np.clip(blue_diff, 0, 255).astype(np.uint8)
-        _, mask_blue_diff = cv2.threshold(blue_diff, Config.BLUE_CHANNEL_DIFF_THRESHOLD, 255, cv2.THRESH_BINARY)
-        mask_blue_hsv = cv2.inRange(hsv, Config.HSV_LOWER_BLUE, Config.HSV_UPPER_BLUE)
-        mask_blue_combined = cv2.bitwise_or(mask_blue_diff, mask_blue_hsv)
-        mask_blue = cv2.bitwise_and(mask_blue_combined, mask_bright)
-
-        # 小核保留偏航时只有数个像素宽的灯条，同时连接轻微断点。
-        kernel_size = Config.MORPH_KERNEL_SIZE
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
-        mask_red = cv2.morphologyEx(mask_red, cv2.MORPH_CLOSE, kernel)
-        mask_red = cv2.morphologyEx(mask_red, cv2.MORPH_OPEN, kernel)
-
-        mask_blue = cv2.morphologyEx(mask_blue, cv2.MORPH_CLOSE, kernel)
-        mask_blue = cv2.morphologyEx(mask_blue, cv2.MORPH_OPEN, kernel, iterations=1)
-
-        return mask_red, mask_blue
-
-    def _find_light_bar_candidates(self, frame, mask_red, mask_blue):
-        """提取灯条候选"""
+    def _find_light_bar_candidates(self, frame, mask_red):
+        """从红色掩膜中提取灯条候选并确认颜色。"""
         candidates = []
         self._color_rejection_counts = {}
+        contours, _ = cv2.findContours(mask_red, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for contour in contours:
+            if cv2.contourArea(contour) < MIN_LIGHT_BAR_AREA:
+                continue
+            color, response, fraction = self._classify_contour_color(frame, contour)
+            if color != 'red':
+                self._color_rejection_counts[color] = self._color_rejection_counts.get(color, 0) + 1
+                continue
+            bar = LightBarCandidate(contour, color)
+            bar.color_response = response
+            bar.color_fraction = fraction
+            candidates.append(bar)
 
-        # 灰度灯芯候选通过邻域颜色确定归属，避免白色过曝核心被误判为蓝色。
-        contours_red, _ = cv2.findContours(mask_red, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        for contour in contours_red:
-            if cv2.contourArea(contour) >= Config.MIN_LIGHT_BAR_AREA:
-                color, response, fraction = self._classify_contour_color(frame, contour)
-                if color == Config.TARGET_LIGHT_COLOR:
-                    bar = LightBarCandidate(contour, color)
-                    bar.color_response = response
-                    bar.color_fraction = fraction
-                    candidates.append(bar)
-                else:
-                    self._color_rejection_counts[color] = (
-                        self._color_rejection_counts.get(color, 0) + 1
-                    )
-
-        # 仅在需要蓝色目标时才处理蓝色候选，避免高亮背景形成 blue 候选后干扰配对。
-        if Config.TARGET_LIGHT_COLOR == 'blue':
-            contours_blue, _ = cv2.findContours(mask_blue, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            for contour in contours_blue:
-                if cv2.contourArea(contour) >= Config.MIN_LIGHT_BAR_AREA:
-                    color, response, fraction = self._classify_contour_color(frame, contour)
-                    if color == 'blue':
-                        bar = LightBarCandidate(contour, color)
-                        bar.color_response = response
-                        bar.color_fraction = fraction
-                        candidates.append(bar)
-
-        # 使用 HSV 的 V 通道计算候选内部亮度，与预处理阶段的亮度定义保持一致。
         value_channel = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)[:, :, 2]
         for bar in candidates:
             bar.brightness = self._compute_brightness(bar, value_channel)
-
         return candidates
 
     def _classify_contour_color(self, frame, contour):
@@ -327,7 +270,7 @@ class LightDetector:
         """
         mask = np.zeros(frame.shape[:2], dtype=np.uint8)
         cv2.drawContours(mask, [contour], -1, 255, thickness=cv2.FILLED)
-        size = Config.COLOR_CLASSIFICATION_DILATE_SIZE
+        size = COLOR_CLASSIFICATION_DILATE_SIZE
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (size, size))
         support = cv2.dilate(mask, kernel)
         b, g, r = cv2.split(frame)
@@ -336,7 +279,7 @@ class LightDetector:
         g_values = g[pixels].astype(np.int16)
         r_values = r[pixels].astype(np.int16)
         response = float(np.mean(r_values - b_values))
-        margin = Config.RED_COLOR_DOMINANCE_MARGIN
+        margin = RED_COLOR_DOMINANCE_MARGIN
         red_fraction = float(np.mean(
             (r_values > g_values + margin) & (r_values > b_values + margin)
         ))
@@ -347,10 +290,7 @@ class LightDetector:
         # 低饱和的过曝灯芯不满足 R-G > 45，但已落在用户现场标定的 HSV
         # 范围内。用轮廓邻域的 HSV 命中比例作为第二条红色确认通路。
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        hsv_red = cv2.bitwise_or(
-            cv2.inRange(hsv, Config.HSV_LOWER_RED1, Config.HSV_UPPER_RED1),
-            cv2.inRange(hsv, Config.HSV_LOWER_RED2, Config.HSV_UPPER_RED2)
-        )
+        hsv_red = cv2.inRange(hsv, Config.HSV_LOWER_RED1, Config.HSV_UPPER_RED1)
         hsv_hits = hsv_red[pixels] > 0
         hsv_fraction = float(np.mean(hsv_hits))
         # 色差只在 HSV 命中像素上计算，不能让膨胀邻域中的黑背景稀释结果。
@@ -359,18 +299,15 @@ class LightDetector:
         else:
             hsv_response = 0.0
         strong_red = (
-            response >= Config.MIN_RED_COLOR_RESPONSE and
-            red_fraction >= Config.MIN_RED_COLOR_FRACTION
+            response >= MIN_RED_COLOR_RESPONSE and
+            red_fraction >= MIN_RED_COLOR_FRACTION
         )
         calibrated_hsv_red = (
-            hsv_fraction >= Config.MIN_RED_HSV_FRACTION and
-            Config.MIN_RED_HSV_RESPONSE <= hsv_response <= Config.MAX_RED_HSV_RESPONSE
+            hsv_fraction >= MIN_RED_HSV_FRACTION and
+            MIN_RED_HSV_RESPONSE <= hsv_response <= MAX_RED_HSV_RESPONSE
         )
         if strong_red or calibrated_hsv_red:
             return 'red', response, max(red_fraction, hsv_fraction)
-        if (response <= -Config.MIN_RED_COLOR_RESPONSE and
-                blue_fraction >= Config.MIN_RED_COLOR_FRACTION):
-            return 'blue', response, blue_fraction
         return 'unknown', response, max(red_fraction, blue_fraction)
 
     def _filter_light_bars(self, candidates, frame):
@@ -379,8 +316,8 @@ class LightDetector:
         rejected_counts = {}
         frame_area = frame.shape[0] * frame.shape[1]
         max_area = max(
-            Config.MAX_LIGHT_BAR_AREA,
-            Config.MAX_LIGHT_BAR_AREA_RATIO * frame_area
+            MAX_LIGHT_BAR_AREA,
+            MAX_LIGHT_BAR_AREA_RATIO * frame_area
         )
 
         def reject(bar, reason):
@@ -389,33 +326,33 @@ class LightDetector:
 
         for bar in candidates:
             # 面积筛选
-            if bar.area < Config.MIN_LIGHT_BAR_AREA or bar.area > max_area:
+            if bar.area < MIN_LIGHT_BAR_AREA or bar.area > max_area:
                 reject(bar, 'area')
                 continue
 
             # 长宽比筛选
-            if bar.aspect_ratio < Config.MIN_LIGHT_BAR_ASPECT_RATIO:
+            if bar.aspect_ratio < MIN_LIGHT_BAR_ASPECT_RATIO:
                 reject(bar, 'aspect_ratio_low')
                 continue
-            if bar.aspect_ratio > Config.MAX_LIGHT_BAR_ASPECT_RATIO:
+            if bar.aspect_ratio > MAX_LIGHT_BAR_ASPECT_RATIO:
                 reject(bar, 'aspect_ratio_high')
                 continue
 
             # 矩形度筛选
-            if bar.rectangularity < Config.MIN_LIGHT_BAR_RECTANGULARITY:
+            if bar.rectangularity < MIN_LIGHT_BAR_RECTANGULARITY:
                 reject(bar, 'rectangularity')
                 continue
 
             # 方向筛选
-            angle_diff = abs(bar.angle - Config.EXPECTED_LIGHT_BAR_ANGLE)
+            angle_diff = abs(bar.angle - EXPECTED_LIGHT_BAR_ANGLE)
             if angle_diff > 90:
                 angle_diff = 180 - angle_diff
-            if angle_diff > Config.LIGHT_BAR_ANGLE_TOLERANCE:
+            if angle_diff > LIGHT_BAR_ANGLE_TOLERANCE:
                 reject(bar, 'angle')
                 continue
 
             # 亮度筛选
-            if bar.brightness < Config.MIN_LIGHT_BAR_BRIGHTNESS:
+            if bar.brightness < MIN_LIGHT_BAR_BRIGHTNESS:
                 reject(bar, 'brightness')
                 continue
 
@@ -425,7 +362,7 @@ class LightDetector:
         if Config.DEBUG and rejected_counts:
             summary = ', '.join(f'{name}={count}' for name, count in rejected_counts.items())
             print(f"[Detector] 候选淘汰统计: {summary}")
-            if Config.DEBUG_SHOW_FILTERED:
+            if DEBUG_SHOW_FILTERED:
                 for i, bar in enumerate(candidates):
                     if bar.rejection_reason is not None:
                         print(
@@ -448,7 +385,7 @@ class LightDetector:
             return None
 
         best_pair = None
-        best_score = Config.MIN_PAIR_SCORE
+        best_score = MIN_PAIR_SCORE
 
         # 遍历所有配对
         for i in range(len(candidates)):
@@ -463,7 +400,7 @@ class LightDetector:
                 score = self._score_pair(pair)
                 pair.score = score
 
-                if Config.DEBUG and Config.DEBUG_SHOW_PAIRS:
+                if Config.DEBUG and DEBUG_SHOW_PAIRS:
                     print(f"\n  配对尝试: 灯条{i+1} + 灯条{j+1}")
                     print(f"    得分: {score:.3f}")
                     if pair.rejection_reason:
@@ -480,7 +417,7 @@ class LightDetector:
         bar1, bar2 = pair.bar1, pair.bar2
 
         # 同一装甲板的两根灯条颜色一致；外观明显不同的候选直接拒绝。
-        if Config.REQUIRE_SAME_COLOR_PAIR and bar1.color != bar2.color:
+        if bar1.color != bar2.color:
             pair.rejection_reason = 'color_mismatch'
             return 0.0
 
@@ -489,13 +426,13 @@ class LightDetector:
         angle_diff = abs(bar1.angle - bar2.angle)
         if angle_diff > 90:
             angle_diff = 180 - angle_diff
-        if area_ratio > Config.MAX_AREA_RATIO:
+        if area_ratio > MAX_AREA_RATIO:
             pair.rejection_reason = f'area_ratio={area_ratio:.2f}'
             return 0.0
-        if width_diff > Config.MAX_WIDTH_DIFF_RATIO:
+        if width_diff > MAX_WIDTH_DIFF_RATIO:
             pair.rejection_reason = f'width_diff={width_diff:.2f}'
             return 0.0
-        if angle_diff > Config.MAX_ANGLE_DIFF:
+        if angle_diff > MAX_ANGLE_DIFF:
             pair.rejection_reason = f'light_angle_diff={angle_diff:.1f}deg'
             return 0.0
 
@@ -510,46 +447,46 @@ class LightDetector:
         left_rightmost = max(pair.left_bar.box[:, 0])
         right_leftmost = min(pair.right_bar.box[:, 0])
         horizontal_overlap = max(0.0, left_rightmost - right_leftmost)
-        if overlap_ratio < Config.MIN_VERTICAL_OVERLAP_RATIO:
+        if overlap_ratio < MIN_VERTICAL_OVERLAP_RATIO:
             pair.rejection_reason = f'vertical_overlap={overlap_ratio:.2f}'
             return 0.0
-        if horizontal_overlap > Config.MAX_HORIZONTAL_OVERLAP_RATIO * pair.avg_width:
+        if horizontal_overlap > MAX_HORIZONTAL_OVERLAP_RATIO * pair.avg_width:
             pair.rejection_reason = f'horizontal_overlap={horizontal_overlap:.1f}px'
             return 0.0
 
         # 长度、宽度和角度相似度。
         length_diff = abs(bar1.length - bar2.length) / pair.avg_length
-        length_score = max(0, 1.0 - length_diff / Config.MAX_LENGTH_DIFF_RATIO)
-        width_score = max(0, 1.0 - width_diff / Config.MAX_WIDTH_DIFF_RATIO)
-        angle_score = max(0, 1.0 - angle_diff / Config.MAX_ANGLE_DIFF)
+        length_score = max(0, 1.0 - length_diff / MAX_LENGTH_DIFF_RATIO)
+        width_score = max(0, 1.0 - width_diff / MAX_WIDTH_DIFF_RATIO)
+        angle_score = max(0, 1.0 - angle_diff / MAX_ANGLE_DIFF)
 
         # 使用水平中心距，避免一根灯条轻微上下偏移破坏间距判断。
         distance_ratio = pair.horizontal_distance / pair.avg_length
-        if not Config.MIN_PAIR_DISTANCE_RATIO <= distance_ratio <= Config.MAX_PAIR_DISTANCE_RATIO:
+        if not MIN_PAIR_DISTANCE_RATIO <= distance_ratio <= MAX_PAIR_DISTANCE_RATIO:
             pair.rejection_reason = f'distance_ratio={distance_ratio:.2f}'
             return 0.0
-        expected_ratio = Config.EXPECTED_PAIR_DISTANCE_RATIO
+        expected_ratio = EXPECTED_PAIR_DISTANCE_RATIO
         relative_distance_error = abs(distance_ratio - expected_ratio) / (expected_ratio + 1e-6)
         distance_score = float(np.exp(
-            -0.5 * (relative_distance_error / Config.PAIR_DISTANCE_SCORE_SIGMA) ** 2
+            -0.5 * (relative_distance_error / PAIR_DISTANCE_SCORE_SIGMA) ** 2
         ))
 
         vertical_offset = abs(bar1.center[1] - bar2.center[1])
         vertical_ratio = vertical_offset / pair.avg_length
-        alignment_score = max(0, 1.0 - vertical_ratio / Config.MAX_VERTICAL_OFFSET_RATIO)
+        alignment_score = max(0, 1.0 - vertical_ratio / MAX_VERTICAL_OFFSET_RATIO)
 
         temporal_score = self._temporal_pair_score(pair)
 
         score = (
-            Config.WEIGHT_LENGTH_SIMILARITY * length_score +
-            Config.WEIGHT_WIDTH_SIMILARITY * width_score +
-            Config.WEIGHT_ANGLE_SIMILARITY * angle_score +
-            Config.WEIGHT_DISTANCE * distance_score +
-            Config.WEIGHT_ALIGNMENT * alignment_score +
-            Config.WEIGHT_VERTICAL_OVERLAP * overlap_ratio +
-            Config.WEIGHT_TEMPORAL_CONTINUITY * temporal_score
+            WEIGHT_LENGTH_SIMILARITY * length_score +
+            WEIGHT_WIDTH_SIMILARITY * width_score +
+            WEIGHT_ANGLE_SIMILARITY * angle_score +
+            WEIGHT_DISTANCE * distance_score +
+            WEIGHT_ALIGNMENT * alignment_score +
+            WEIGHT_VERTICAL_OVERLAP * overlap_ratio +
+            WEIGHT_TEMPORAL_CONTINUITY * temporal_score
         )
-        if score <= Config.MIN_PAIR_SCORE:
+        if score <= MIN_PAIR_SCORE:
             pair.rejection_reason = f'score_below_threshold={score:.3f}'
         return score
 
@@ -563,7 +500,7 @@ class LightDetector:
         )))
         normalized_shift = mean_shift / (pair.avg_length + 1e-6)
         return float(np.exp(
-            -0.5 * (normalized_shift / Config.TRACK_ASSOCIATION_SIGMA) ** 2
+            -0.5 * (normalized_shift / TRACK_ASSOCIATION_SIGMA) ** 2
         ))
 
     def reset_tracking(self):
